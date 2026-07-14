@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seat Editor – AI Exam Seating System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        /* ─────────────────────────────────────────────────────────
+           SEAT EDITOR — Two modes: Drag-Swap + Click-to-Edit
+        ───────────────────────────────────────────────────────── */
+
+        .hall-pills { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+        .hall-pill {
+            padding:.45rem 1.1rem; border-radius:50px;
+            border:2px solid var(--border); background:var(--card-bg);
+            font-weight:600; font-size:.85rem; cursor:pointer; transition:all .2s; color:var(--text-muted);
+        }
+        .hall-pill.active, .hall-pill:hover { border-color:var(--accent); background:var(--accent-light); color:var(--primary); }
+
+        .dept-legend-bar {
+            display:flex; flex-wrap:wrap; gap:.5rem; align-items:center;
+            padding:.6rem 1rem; background:var(--card-bg);
+            border:1px solid var(--border); border-radius:var(--radius); margin-bottom:1rem;
+        }
+        .legend-chip { display:flex; align-items:center; gap:.35rem; padding:.2rem .65rem; border-radius:50px; font-size:.72rem; font-weight:700; }
+        .legend-dot  { width:9px; height:9px; border-radius:50%; }
+
+        /* Toolbar */
+        .editor-toolbar {
+            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem;
+            background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius);
+            padding:.7rem 1.2rem; margin-bottom:1rem;
+        }
+        .toolbar-left  { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+        .toolbar-hint  { font-size:.78rem; color:var(--text-muted); display:flex; align-items:center; gap:.35rem; }
+
+        .mode-btn {
+            padding:.35rem .85rem; border-radius:8px; font-size:.8rem; font-weight:600;
+            border:1.5px solid var(--border); background:var(--card-bg); color:var(--text-muted);
+            cursor:pointer; transition:all .2s;
+        }
+        .mode-btn.active  { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .mode-btn:hover:not(.active) { border-color:var(--primary); color:var(--primary); }
+
+        .btn-undo, .btn-redo {
+            background:var(--card-bg); border:1.5px solid var(--border); border-radius:8px;
+            padding:.32rem .72rem; font-size:.78rem; font-weight:600; color:var(--text-muted); transition:all .2s;
+        }
+        .btn-undo:hover:not(:disabled), .btn-redo:hover:not(:disabled) { border-color:var(--primary); color:var(--primary); }
+        .btn-undo:disabled, .btn-redo:disabled { opacity:.3; }
+
+        .change-counter { background:var(--accent-light); color:var(--primary); border:1px solid #f6d280; border-radius:6px; padding:.28rem .7rem; font-size:.75rem; font-weight:700; }
+
+        /* Grid */
+        .hall-grid-wrapper { background:var(--card-bg); border:1px solid var(--border); border-radius:var(--radius); padding:1.25rem; overflow-x:auto; }
+        .hall-label { font-family:'Space Grotesk',sans-serif; font-size:1rem; font-weight:700; color:var(--primary); margin-bottom:1rem; display:flex; align-items:center; gap:.5rem; }
+
+        .bench-row   { display:flex; align-items:flex-start; gap:.55rem; margin-bottom:.55rem; }
+        .bench-label { min-width:34px; font-size:.7rem; font-weight:700; color:var(--text-muted); text-align:right; flex-shrink:0; padding-top:.9rem; }
+
+        /* ── Seat card base ── */
+        .seat-card {
+            width:100px; min-height:86px; border-radius:10px; border:2px solid transparent;
+            padding:.45rem .4rem; text-align:center; position:relative;
+            display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+            transition:transform .15s, box-shadow .15s, border-color .15s, opacity .15s;
+            user-select:none;
+        }
+
+        /* VIEW / drag mode */
+        .seat-card.view-mode             { cursor:grab; }
+        .seat-card.view-mode:active      { cursor:grabbing; }
+        .seat-card.view-mode:hover:not(.seat-empty) { transform:translateY(-3px) scale(1.04); box-shadow:0 8px 20px rgba(0,0,0,.13); z-index:10; }
+        .seat-card.dragging              { opacity:.3; transform:scale(.95); }
+        .seat-card.drag-over             { transform:scale(1.08) !important; box-shadow:0 0 0 3px var(--accent),0 8px 20px rgba(232,160,32,.25) !important; border-color:var(--accent) !important; z-index:20; }
+
+        /* EDIT mode */
+        .seat-card.edit-mode             { cursor:pointer; min-height:86px; }
+        .seat-card.edit-mode:hover:not(.seat-empty) { box-shadow:0 0 0 2px var(--primary); transform:none; }
+        .seat-card.edit-mode.is-editing  { box-shadow:0 0 0 3px var(--primary); min-height:128px; cursor:default; }
+
+        /* Pencil hint visible in edit mode */
+        .edit-hint { position:absolute; top:3px; right:4px; font-size:.55rem; opacity:.45; display:none; }
+        .seat-card.edit-mode .edit-hint  { display:block; }
+        .seat-card.edit-mode.is-editing .edit-hint { display:none; }
+
+        /* View layer */
+        .seat-view { display:flex; flex-direction:column; align-items:center; gap:2px; width:100%; }
+        .seat-roll  { font-family:'Space Grotesk',sans-serif; font-size:.82rem; font-weight:700; line-height:1.2; }
+        .seat-name  { font-size:.66rem; font-weight:500; opacity:.85; max-width:88px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        .seat-dept-badge { font-size:.6rem; font-weight:700; padding:.1rem .38rem; border-radius:50px; background:rgba(0,0,0,.09); letter-spacing:.04em; margin-top:1px; }
+
+        /* Edit layer (hidden by default, shown when is-editing) */
+        .seat-edit { display:none; flex-direction:column; gap:3px; width:100%; }
+        .seat-card.is-editing .seat-view { display:none; }
+        .seat-card.is-editing .seat-edit { display:flex; }
+
+        .seat-input {
+            width:100%; border:1px solid rgba(0,0,0,.15); border-radius:5px;
+            padding:2px 5px; font-size:.72rem; font-weight:600;
+            background:rgba(255,255,255,.8); color:inherit; outline:none; text-align:center;
+        }
+        .seat-input.roll-input { font-size:.78rem; }
+        .seat-input:focus { border-color:var(--primary); background:#fff; box-shadow:0 0 0 2px rgba(26,60,94,.12); }
+
+        .seat-edit-btns { display:flex; gap:3px; margin-top:3px; justify-content:center; }
+        .btn-ok  { border:none; border-radius:4px; padding:1px 8px; font-size:.65rem; font-weight:700; background:var(--primary); color:#fff; cursor:pointer; }
+        .btn-ok:hover  { opacity:.85; }
+        .btn-x   { border:none; border-radius:4px; padding:1px 8px; font-size:.65rem; font-weight:700; background:#e2e8f0; color:var(--text-muted); cursor:pointer; }
+        .btn-x:hover   { opacity:.85; }
+
+        /* Empty seat */
+        .seat-card.seat-empty { background:#f8fafc !important; border:2px dashed #cbd5e1 !important; color:#94a3b8 !important; }
+        .seat-card.seat-empty.view-mode { cursor:default; }
+        .seat-card.seat-empty.view-mode:hover { transform:none; box-shadow:none; }
+        .seat-card.seat-empty.drag-over { border-color:var(--accent) !important; background:var(--accent-light) !important; }
+        .seat-card.seat-empty.edit-mode:hover { box-shadow:0 0 0 2px var(--primary); }
+        .empty-icon { font-size:1rem; opacity:.4; }
+        .empty-text { font-size:.68rem; font-weight:600; margin-top:2px; }
+
+        /* Flash pulse */
+        @keyframes flashPulse { 0%{box-shadow:0 0 0 0 rgba(232,160,32,.8);} 60%{box-shadow:0 0 0 10px rgba(232,160,32,0);} 100%{box-shadow:0 0 0 0 rgba(232,160,32,0);} }
+        .swap-flash { animation:flashPulse .45s ease; }
+
+        /* Save bar */
+        .save-bar {
+            position:sticky; bottom:0;
+            background:linear-gradient(0deg,var(--bg) 65%,transparent);
+            padding:1rem 0 .4rem; display:flex; align-items:center; justify-content:space-between;
+            flex-wrap:wrap; gap:.75rem; margin-top:1rem;
+        }
+        .save-status { font-size:.82rem; font-weight:500; display:flex; align-items:center; gap:.4rem; }
+        .save-status.unsaved { color:#f59e0b; }
+        .save-status.saved   { color:var(--success); }
+
+        .btn-save-seating {
+            background:linear-gradient(135deg,#16a34a,#15803d); border:none; border-radius:10px;
+            padding:.6rem 1.6rem; font-weight:700; font-size:.92rem; color:#fff;
+            transition:transform .15s, box-shadow .15s;
+        }
+        .btn-save-seating:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(22,163,74,.35); color:#fff; }
+        .btn-save-seating:disabled { opacity:.6; transform:none; }
+
+        .toast-zone { position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; min-width:260px; }
+    </style>
+</head>
+<body class="app-body">
+
+<!-- ── Sidebar ── -->
+<div class="sidebar">
+    <div class="sidebar-brand"><i class="fas fa-graduation-cap me-2"></i><span>Seating AI</span></div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}"       class="nav-link"><i class="fas fa-th-large"></i> Dashboard</a>
+        <a href="{{ url_for('upload') }}"          class="nav-link"><i class="fas fa-upload"></i> Upload Students</a>
+        <a href="{{ url_for('generate') }}"        class="nav-link"><i class="fas fa-cogs"></i> Generate Seating</a>
+        <a href="{{ url_for('seating_result') }}"  class="nav-link"><i class="fas fa-table"></i> View Results</a>
+        <a href="{{ url_for('seating_preview') }}" class="nav-link active"><i class="fas fa-edit"></i> Seat Editor</a>
+    </nav>
+        <a href="/admin/edit" class="nav-link">
+            <i class="fas fa-edit"></i> Edit Seating
+        </a>
+        <a href="/student" class="nav-link">
+            <i class="fas fa-search"></i> Student Search
+        </a>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link logout-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+</div>
+
+<!-- ── Main ── -->
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title"><h4><i class="fas fa-edit me-2"></i>Seat Editor</h4></div>
+        <div class="topbar-right"><span class="admin-badge"><i class="fas fa-user-shield me-1"></i>Admin</span></div>
+    </div>
+
+    <div class="content-area">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}{% for cat, msg in messages %}
+            <div class="alert alert-{{ cat }} alert-dismissible fade show">
+              {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}{% endif %}
+        {% endwith %}
+
+        {% if not halls %}
+        <div class="empty-state">
+            <i class="fas fa-chair"></i>
+            <h5>No Seating Arrangement Found</h5>
+            <p>Generate a seating arrangement before using the editor.</p>
+            <a href="{{ url_for('generate') }}" class="btn btn-primary mt-2">Generate Now</a>
+        </div>
+
+        {% else %}
+
+        {% if exam_info %}
+        <div class="result-header mb-3">
+    <div>
+        <h3>Examination Seating Arrangement</h3>
+        <p class="mb-0 text-muted">
+            {{ exam_info.exam_name }} &nbsp;|&nbsp; {{ exam_info.exam_date }}
+
+            {% if exam_info.exam_start_time %}
+                &nbsp;|&nbsp;
+                {{ exam_info.exam_start_time }}
+            {% endif %}
+
+            {% if exam_info.exam_end_time %}
+                - {{ exam_info.exam_end_time }}
+            {% endif %}
+        </p>
+    </div>
+            <div class="result-header-meta">
+                <span class="meta-tag">{{ halls|length }} Halls</span>
+                <span class="meta-tag" id="changeTag">0 Changes</span>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Legend -->
+        <div class="dept-legend-bar" id="deptLegend"></div>
+
+        <!-- Hall pills -->
+        <div class="hall-pills">
+            {% for hall in halls %}
+            <button class="hall-pill {% if loop.first %}active{% endif %}"
+                    onclick="switchHall({{ loop.index0 }}, this)">
+                <i class="fas fa-door-open me-1"></i>{{ hall.hall_name if hall.hall_name else 'Hall ' ~ hall.hall_number }}
+                <span class="badge ms-1" style="background:var(--accent);color:var(--primary);">{{ hall.total_students }}</span>
+            </button>
+            {% endfor %}
+        </div>
+
+        <!-- Toolbar -->
+        <div class="editor-toolbar">
+            <div class="toolbar-left">
+                <button class="mode-btn active" id="btnDragMode" onclick="setMode('drag')">
+                    <i class="fas fa-hand-paper me-1"></i>Drag &amp; Swap
+                </button>
+                <button class="mode-btn" id="btnEditMode" onclick="setMode('edit')">
+                    <i class="fas fa-pencil-alt me-1"></i>Click to Edit
+                </button>
+                <div style="width:1px;height:20px;background:var(--border);margin:0 2px;"></div>
+                <button class="btn-undo" id="btnUndo" onclick="undoAction()" disabled title="Ctrl+Z"><i class="fas fa-undo me-1"></i>Undo</button>
+                <button class="btn-redo" id="btnRedo" onclick="redoAction()" disabled title="Ctrl+Y"><i class="fas fa-redo me-1"></i>Redo</button>
+                <span class="change-counter" id="changeCounter">0 changes</span>
+            </div>
+            <div class="toolbar-hint" id="toolbarHint">
+                <i class="fas fa-hand-paper text-warning"></i> Drag a seat onto another to swap
+            </div>
+        </div>
+
+        <!-- Seat grid -->
+        <div class="hall-grid-wrapper">
+            <div class="hall-label">
+                <i class="fas fa-door-open"></i>
+                <span id="hallTitleText">Hall 1</span>
+            </div>
+            <div id="seatGrid"></div>
+        </div>
+
+        <!-- Save bar -->
+        <div class="save-bar">
+            <div class="save-status unsaved" id="saveStatus">
+                <i class="fas fa-circle-dot"></i>
+                <span id="saveStatusText">Unsaved changes — click Save to apply</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm" onclick="resetHall()">
+                    <i class="fas fa-rotate-left me-1"></i>Reset Hall
+                </button>
+                <button class="btn btn-save-seating" id="btnSave" onclick="saveSeating()">
+                    <i class="fas fa-save me-2"></i>Save Seating
+                </button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+</div>
+
+<div class="toast-zone" id="toastArea"></div>
+
+<!-- Injected halls data -->
+<script>const HALLS_DATA = {{ halls | tojson }};</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════ */
+let halls          = JSON.parse(JSON.stringify(HALLS_DATA));
+let currentHallIdx = 0;
+let currentMode    = 'drag';
+let totalChanges   = 0;
+let undoStack      = [];
+let redoStack      = [];
+let dragSource     = null;
+
+/* ═══════════════════════════════════════════════════
+   COLOUR MAP
+═══════════════════════════════════════════════════ */
+const PALETTE = [
+    {bg:'#dbeafe',text:'#1e3a8a',border:'#93c5fd',dot:'#3b82f6'},
+    {bg:'#dcfce7',text:'#14532d',border:'#86efac',dot:'#22c55e'},
+    {bg:'#ffedd5',text:'#7c2d12',border:'#fdba74',dot:'#f97316'},
+    {bg:'#ede9fe',text:'#4c1d95',border:'#c4b5fd',dot:'#8b5cf6'},
+    {bg:'#fce7f3',text:'#831843',border:'#f9a8d4',dot:'#ec4899'},
+    {bg:'#ecfdf5',text:'#065f46',border:'#6ee7b7',dot:'#10b981'},
+    {bg:'#f0f9ff',text:'#0c4a6e',border:'#7dd3fc',dot:'#0ea5e9'},
+    {bg:'#fef9c3',text:'#713f12',border:'#fde047',dot:'#eab308'},
+];
+const deptColorMap = {};
+function getDeptColor(dept) {
+    if (!dept) return PALETTE[0];
+    const k = dept.toUpperCase();
+    if (!deptColorMap[k]) deptColorMap[k] = PALETTE[Object.keys(deptColorMap).length % PALETTE.length];
+    return deptColorMap[k];
+}
+
+/* ═══════════════════════════════════════════════════
+   LEGEND
+═══════════════════════════════════════════════════ */
+function buildLegend() {
+    const depts = new Set();
+    halls.forEach(h => h.benches.forEach(b => b.forEach(s => { if (s) depts.add(s.department.toUpperCase()); })));
+    depts.forEach(d => getDeptColor(d));
+    const el = document.getElementById('deptLegend');
+    el.innerHTML = '<strong style="font-size:.75rem;color:var(--text-muted);margin-right:.4rem;">Depts:</strong>';
+    Object.entries(deptColorMap).forEach(([dept, c]) => {
+        el.insertAdjacentHTML('beforeend',
+            `<div class="legend-chip" style="background:${c.bg};color:${c.text};border:1px solid ${c.border}">
+                <div class="legend-dot" style="background:${c.dot}"></div>${dept}
+             </div>`);
+    });
+}
+
+/* ═══════════════════════════════════════════════════
+   MODE SWITCH
+═══════════════════════════════════════════════════ */
+function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('btnDragMode').classList.toggle('active', mode === 'drag');
+    document.getElementById('btnEditMode').classList.toggle('active', mode === 'edit');
+    const hint = document.getElementById('toolbarHint');
+    hint.innerHTML = mode === 'drag'
+        ? '<i class="fas fa-hand-paper text-warning"></i> Drag a seat onto another to swap'
+        : '<i class="fas fa-pencil-alt" style="color:var(--primary)"></i> Click any seat card to edit its details';
+    renderHall(currentHallIdx);
+}
+
+/* ═══════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════ */
+function renderHall(hallIdx) {
+    const hall     = halls[hallIdx];
+    const hallName = hall.hall_name || `Hall ${hall.hall_number}`;
+    document.getElementById('hallTitleText').textContent =
+        `${hallName}  —  ${hall.total_students} students`;
+    const grid = document.getElementById('seatGrid');
+    grid.innerHTML = '';
+    hall.benches.forEach((bench, bi) => {
+        const row = document.createElement('div');
+        row.className = 'bench-row';
+        const lbl = document.createElement('div');
+        lbl.className = 'bench-label';
+        lbl.textContent = `B${bi + 1}`;
+        row.appendChild(lbl);
+        bench.forEach((student, si) => row.appendChild(makeSeatCard(student, hallIdx, bi, si)));
+        grid.appendChild(row);
+    });
+}
+
+function makeSeatCard(student, hi, bi, si) {
+    const card = document.createElement('div');
+    card.className = 'seat-card';
+    card.dataset.hall = hi; card.dataset.bench = bi; card.dataset.seat = si;
+
+    const empty = !student;
+    const roll = student ? esc(student.register_number) : '';
+    const name = student ? esc(student.name || '') : '';
+    const dept = student ? esc(student.department) : '';
+
+    if (empty) card.classList.add('seat-empty');
+
+    if (!empty) {
+        const c = getDeptColor(student.department);
+        card.style.cssText = `background:${c.bg};color:${c.text};border-color:${c.border};`;
+    }
+
+    card.innerHTML = `
+        <i class="fas fa-pencil-alt edit-hint"></i>
+        <div class="seat-view">
+            ${empty
+                ? `<div class="empty-icon"><i class="fas fa-chair"></i></div><div class="empty-text">EMPTY</div>`
+                : `<div class="seat-roll">${roll}</div>
+                   <div class="seat-name">${name}</div>
+                   <div class="seat-dept-badge">${dept}</div>`
+            }
+        </div>
+        <div class="seat-edit">
+            <input class="seat-input roll-input" placeholder="Register Number" value="${roll}">
+            <input class="seat-input name-input" placeholder="Name"    value="${name}">
+            <input class="seat-input dept-input" placeholder="Dept"    value="${dept}">
+            <div class="seat-edit-btns">
+                <button class="btn-ok" onclick="confirmEdit(event,${hi},${bi},${si})">✓ OK</button>
+                <button class="btn-x"  onclick="cancelEdit(event,${hi},${bi},${si})">✕</button>
+            </div>
+        </div>`;
+
+    if (currentMode === 'drag') {
+        card.classList.add('view-mode');
+        if (!empty) {
+            card.draggable = true;
+            attachDragEvents(card, hi, bi, si);
+        }
+    } else {
+        card.classList.add('edit-mode');
+        card.addEventListener('click', e => {
+            if (['INPUT','BUTTON'].includes(e.target.tagName)) return;
+            // Close any other open edit cards first
+            document.querySelectorAll('.seat-card.is-editing').forEach(c => {
+                if (c !== card) cancelEditCard(c);
+            });
+            card.classList.toggle('is-editing');
+            if (card.classList.contains('is-editing')) {
+                card.querySelector('.roll-input').focus();
+            }
+        });
+    }
+    return card;
+}
+
+/* ═══════════════════════════════════════════════════
+   INLINE EDIT
+═══════════════════════════════════════════════════ */
+function confirmEdit(e, hi, bi, si) {
+    e.stopPropagation();
+    const card  = getSeatCard(hi, bi, si);
+    const roll  = card.querySelector('.roll-input').value.trim();
+    const name  = card.querySelector('.name-input').value.trim();
+    const dept  = card.querySelector('.dept-input').value.trim().toUpperCase();
+
+    pushUndo();
+
+    if (!roll && !name && !dept) {
+        halls[hi].benches[bi][si] = null;                       // clear → empty
+    } else {
+        halls[hi].benches[bi][si] = {
+            register_number:    roll || 'N/A',
+            name:       name,
+            department: dept || 'N/A',
+        };
+    }
+    halls[hi].total_students = halls[hi].benches.flat().filter(Boolean).length;
+
+    totalChanges++;
+    updateChangeUI();
+    markUnsaved();
+    renderHall(hi);
+    flashCard(hi, bi, si);
+}
+
+function cancelEdit(e, hi, bi, si) {
+    e.stopPropagation();
+    renderHall(hi);   // re-render restores original values
+}
+
+function cancelEditCard(card) {
+    card.classList.remove('is-editing');
+}
+
+/* ═══════════════════════════════════════════════════
+   DRAG & DROP
+═══════════════════════════════════════════════════ */
+function attachDragEvents(card, hi, bi, si) {
+    card.addEventListener('dragstart', e => {
+        dragSource = { hi, bi, si };
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', '');
+        setTimeout(() => card.classList.add('dragging'), 0);
+    });
+    card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        clearDragOver();
+        dragSource = null;
+    });
+    card.addEventListener('dragover',  e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    card.addEventListener('dragenter', e => { e.preventDefault(); if (!isSameSrc(hi,bi,si)) card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+        e.preventDefault();
+        clearDragOver();
+        if (!dragSource) return;
+        const {hi:sH,bi:sB,si:sS} = dragSource;
+        if (sH===hi && sB===bi && sS===si) return;
+        if (sH !== hi) { showToast('Cross-hall swaps not supported', 'warning'); return; }
+
+        pushUndo();
+        const b = halls[hi].benches;
+        [b[sB][sS], b[bi][si]] = [b[bi][si], b[sB][sS]];
+        totalChanges++;
+        updateChangeUI();
+        markUnsaved();
+        renderHall(currentHallIdx);
+        flashCard(hi, sB, sS);
+        flashCard(hi, bi, si);
+    });
+}
+
+function clearDragOver() { document.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over')); }
+function isSameSrc(hi,bi,si) { return dragSource && dragSource.hi===hi && dragSource.bi===bi && dragSource.si===si; }
+
+/* ═══════════════════════════════════════════════════
+   UNDO / REDO
+═══════════════════════════════════════════════════ */
+function pushUndo() { undoStack.push(JSON.stringify(halls)); redoStack=[]; updateUndoRedoUI(); }
+
+function undoAction() {
+    if (!undoStack.length) return;
+    redoStack.push(JSON.stringify(halls));
+    halls = JSON.parse(undoStack.pop());
+    totalChanges = Math.max(0, totalChanges - 1);
+    updateChangeUI(); updateUndoRedoUI(); renderHall(currentHallIdx); markUnsaved();
+}
+function redoAction() {
+    if (!redoStack.length) return;
+    undoStack.push(JSON.stringify(halls));
+    halls = JSON.parse(redoStack.pop());
+    totalChanges++;
+    updateChangeUI(); updateUndoRedoUI(); renderHall(currentHallIdx); markUnsaved();
+}
+function updateUndoRedoUI() {
+    document.getElementById('btnUndo').disabled = !undoStack.length;
+    document.getElementById('btnRedo').disabled = !redoStack.length;
+}
+function updateChangeUI() {
+    const n = totalChanges;
+    document.getElementById('changeCounter').textContent = `${n} change${n!==1?'s':''}`;
+    document.getElementById('changeTag').textContent     = `${n} Change${n!==1?'s':''}`;
+}
+
+/* ═══════════════════════════════════════════════════
+   HALL SWITCHING / RESET
+═══════════════════════════════════════════════════ */
+function switchHall(idx, btn) {
+    currentHallIdx = idx;
+    document.querySelectorAll('.hall-pill').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    renderHall(idx);
+}
+function resetHall() {
+    if (!confirm('Reset current hall to its original generated arrangement?')) return;
+    pushUndo();
+    halls[currentHallIdx] = JSON.parse(JSON.stringify(HALLS_DATA[currentHallIdx]));
+    renderHall(currentHallIdx);
+    showToast(`Hall ${halls[currentHallIdx].hall_number} reset.`, 'info');
+    markUnsaved();
+}
+
+/* ═══════════════════════════════════════════════════
+   SAVE  (Fetch → POST /save_seating)
+═══════════════════════════════════════════════════ */
+function markUnsaved() {
+    document.getElementById('saveStatus').className = 'save-status unsaved';
+    document.getElementById('saveStatusText').textContent = 'Unsaved changes — click Save to apply';
+}
+function markSaved() {
+    document.getElementById('saveStatus').className = 'save-status saved';
+    document.getElementById('saveStatusText').textContent = 'All changes saved ✓';
+}
+
+function saveSeating() {
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving…';
+
+    fetch('/save_seating', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({halls})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            markSaved();
+            showToast('Seating saved successfully!', 'success');
+            undoStack = []; redoStack = [];
+            updateUndoRedoUI();
+        } else {
+            showToast('Save failed: ' + (data.message || 'Unknown error'), 'danger');
+        }
+    })
+    .catch(err => showToast('Network error: ' + err.message, 'danger'))
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save me-2"></i>Save Seating';
+    });
+}
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════ */
+function getSeatCard(h, b, s) {
+    return document.querySelector(`.seat-card[data-hall="${h}"][data-bench="${b}"][data-seat="${s}"]`);
+}
+function flashCard(h, b, s) {
+    const c = getSeatCard(h, b, s);
+    if (!c) return;
+    c.classList.remove('swap-flash'); void c.offsetWidth; c.classList.add('swap-flash');
+    setTimeout(() => c.classList.remove('swap-flash'), 500);
+}
+function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, type='info') {
+    const icons  = {success:'fa-check-circle',danger:'fa-exclamation-circle',warning:'fa-exclamation-triangle',info:'fa-info-circle'};
+    const colors = {success:'#22c55e',danger:'#ef4444',warning:'#f59e0b',info:'#3b82f6'};
+    const id = 'toast-' + Date.now();
+    document.getElementById('toastArea').insertAdjacentHTML('beforeend', `
+        <div id="${id}" class="toast border-0 mb-2"
+             style="background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.13);border-radius:10px;"
+             role="alert" data-bs-autohide="true" data-bs-delay="3500">
+            <div class="d-flex align-items-center p-3 gap-2">
+                <i class="fas ${icons[type]}" style="color:${colors[type]};font-size:1rem;"></i>
+                <div class="me-auto" style="font-size:.875rem;font-weight:500;">${msg}</div>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+        </div>`);
+    const el = document.getElementById(id);
+    new bootstrap.Toast(el).show();
+    el.addEventListener('hidden.bs.toast', () => el.remove());
+}
+
+document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey) {
+        if (e.key==='z') { e.preventDefault(); undoAction(); }
+        if (e.key==='y') { e.preventDefault(); redoAction(); }
+        if (e.key==='s') { e.preventDefault(); saveSeating(); }
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof HALLS_DATA !== 'undefined' && HALLS_DATA.length) {
+        buildLegend();
+        renderHall(0);
+    }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Seating – AI Exam Seating System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        /* Per-hall layout table */
+        .hall-layout-table { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+        .hall-layout-table thead th {
+            font-size: .75rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: .05em; padding: 0 8px 4px;
+        }
+        .hall-row td { padding: 4px 8px; vertical-align: middle; }
+        .hall-num-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 8px;
+            background: var(--primary); color: #fff;
+            font-size: .75rem; font-weight: 700;
+        }
+        .hall-capacity-badge {
+            display: inline-block; font-size: .75rem; font-weight: 700;
+            padding: .2rem .6rem; border-radius: 50px;
+            background: var(--accent-light); color: var(--primary);
+            border: 1px solid #f6d280; min-width: 72px; text-align: center;
+        }
+        .layout-input {
+            width: 72px; text-align: center; border-radius: 8px;
+            border: 1.5px solid var(--border); padding: .35rem .5rem;
+            font-size: .9rem; font-weight: 600; color: var(--text);
+            transition: border-color .2s, box-shadow .2s;
+        }
+        .layout-input:focus {
+            outline: none; border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26,60,94,.1);
+        }
+        .hall-name-input {
+            border-radius: 8px; border: 1.5px solid var(--border);
+            padding: .35rem .6rem; font-size: .85rem; color: var(--text);
+            transition: border-color .2s, box-shadow .2s; width: 100%;
+        }
+        .hall-name-input:focus {
+            outline: none; border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26,60,94,.1);
+        }
+        .layout-sep { font-weight: 700; color: var(--text-muted); font-size: 1rem; }
+        .total-capacity-row {
+            background: var(--accent-light); border-radius: 10px;
+            padding: .75rem 1rem; margin-top: .5rem;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .capacity-stat { font-size: .875rem; }
+        .capacity-stat strong { font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; }
+        .capacity-ok   { color: #16a34a; }
+        .capacity-warn { color: #dc2626; }
+
+        /* Drag & Drop Hall Reorder */
+        #hall-order-section { margin-top: 1.5rem; }
+        #hall-list { display: flex; flex-direction: column; gap: .6rem; margin-top: .75rem; }
+        .hall-card {
+            display: flex; align-items: center; gap: .75rem;
+            background: var(--card-bg); border: 1.5px solid var(--border);
+            border-radius: 12px; padding: .65rem 1rem;
+            cursor: grab; user-select: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,.06);
+            transition: box-shadow .2s, border-color .2s, transform .15s;
+        }
+        .hall-card:hover { border-color: var(--primary); box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+        .hall-card.sortable-chosen { opacity: .85; transform: scale(1.02); border-color: var(--accent); box-shadow: 0 8px 22px rgba(232,160,32,.3); }
+        .hall-card.sortable-ghost  { opacity: .35; }
+        .drag-icon { font-size: 1.1rem; color: var(--text-muted); flex-shrink: 0; }
+        .hall-card-num {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 30px; height: 30px; border-radius: 8px;
+            background: var(--primary); color: #fff; font-size: .75rem; font-weight: 700; flex-shrink: 0;
+        }
+        .hall-card-name { font-weight: 600; font-size: .9rem; color: var(--text); flex: 1; }
+        .hall-card-meta { font-size: .75rem; color: var(--text-muted); }
+        .hall-order-saved { color: #16a34a; font-size: .8rem; display: none; }
+
+        /* Algorithm cards */
+        .algo-card { display: block; cursor: pointer; user-select: none; }
+        .algo-card input[type=radio] { display: none; }
+        .algo-card-body {
+            border: 2px solid var(--border); border-radius: var(--radius);
+            padding: .9rem .75rem; text-align: center;
+            transition: border-color .2s, background .2s, box-shadow .2s;
+        }
+        .algo-card input:checked + .algo-card-body {
+            border-color: var(--accent); background: var(--accent-light);
+            box-shadow: 0 0 0 3px rgba(232,160,32,.15);
+        }
+        .algo-card:hover .algo-card-body { border-color: #94a3b8; }
+        .algo-icon { font-size: 1.4rem; color: var(--primary); margin-bottom: .4rem; }
+        .algo-name { font-size: .78rem; font-weight: 600; color: var(--text); line-height: 1.3; }
+    </style>
+</head>
+<body class="app-body">
+
+<!-- Sidebar -->
+<div class="sidebar">
+    <div class="sidebar-brand"><i class="fas fa-graduation-cap me-2"></i><span>Seating AI</span></div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}"       class="nav-link"><i class="fas fa-th-large"></i> Dashboard</a>
+        <a href="{{ url_for('upload') }}"          class="nav-link"><i class="fas fa-upload"></i> Upload Students</a>
+        <a href="{{ url_for('generate') }}"        class="nav-link active"><i class="fas fa-cogs"></i> Generate Seating</a>
+        <a href="{{ url_for('seating_result') }}"  class="nav-link"><i class="fas fa-table"></i> View Results</a>
+        <a href="{{ url_for('seating_preview') }}" class="nav-link"><i class="fas fa-edit"></i> Seat Editor</a>
+    </nav>
+        <a href="/admin/edit" class="nav-link">
+            <i class="fas fa-edit"></i> Edit Seating
+        </a>
+        <a href="/student" class="nav-link">
+            <i class="fas fa-search"></i> Student Search
+        </a>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link logout-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+</div>
+
+<!-- Main -->
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title"><h4><i class="fas fa-cogs me-2"></i>Generate Seating</h4></div>
+        <div class="topbar-right">
+            <span class="badge-students"><i class="fas fa-users me-1"></i>{{ student_count }} Students Ready</span>
+        </div>
+    </div>
+
+    <div class="content-area">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}{% for cat, msg in messages %}
+            <div class="alert alert-{{ cat }} alert-dismissible fade show">
+              {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}{% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('generate') }}" enctype="multipart/form-data" id="generateForm">
+          <div class="row g-4">
+
+            <!-- ── College info ── -->
+            <div class="col-lg-6">
+                <div class="form-card">
+                    <h5 class="form-card-title"><i class="fas fa-university me-2"></i>Exam Information</h5>
+                    <div class="mb-3">
+                        <label class="form-label">Exam Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="exam_name"
+                               placeholder="e.g. End Semester Examination 2024" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Exam Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" name="exam_date" required>
+                    </div>
+                    <div class="row g-2 mb-0">
+                        <div class="col-6">
+                            <label class="form-label">Exam Start Time</label>
+                            <input type="time" class="form-control" name="exam_start_time" placeholder="e.g. 10:00">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Exam End Time</label>
+                            <input type="time" class="form-control" name="exam_end_time" placeholder="e.g. 13:00">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Hall count + defaults ── -->
+            <div class="col-lg-6">
+                <div class="form-card">
+                    <h5 class="form-card-title"><i class="fas fa-door-open me-2"></i>Hall Configuration</h5>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-4">
+                            <label class="form-label">No. of Halls</label>
+                            <input type="number" class="form-control" name="num_halls"
+                                   id="numHalls" min="1" max="20" value="3" required
+                                   oninput="rebuildHallTable()">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Default Rows</label>
+                            <input type="number" class="form-control" name="benches_per_hall"
+                                   id="defaultRows" min="1" max="50" value="5"
+                                   oninput="applyDefaultsToAll()">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Default Cols</label>
+                            <input type="number" class="form-control" name="seats_per_bench"
+                                   id="defaultCols" min="1" max="20" value="6"
+                                   oninput="applyDefaultsToAll()">
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="form-label mb-0">
+                            <i class="fas fa-th me-1 text-muted"></i>Per-Hall Rows × Cols
+                        </span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                onclick="applyDefaultsToAll()">
+                            <i class="fas fa-sync-alt me-1"></i>Reset to defaults
+                        </button>
+                    </div>
+
+                    <!-- Dynamic per-hall table -->
+                    <div id="hallLayoutContainer"></div>
+
+                    <!-- Capacity summary -->
+                    <div class="total-capacity-row mt-3" id="capacitySummary">
+                        <div class="capacity-stat">
+                            <i class="fas fa-users me-1"></i>Students: <strong>{{ student_count }}</strong>
+                        </div>
+                        <div class="capacity-stat">
+                            <i class="fas fa-chair me-1"></i>Total Seats: <strong id="totalSeats">—</strong>
+                        </div>
+                        <div class="capacity-stat" id="capacityStatus">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Drag & Drop Hall Reorder ── -->
+            <div class="col-12" id="hall-order-section" style="display:none;">
+                <div class="form-card">
+                    <h5 class="form-card-title">
+                        <i class="fas fa-grip-vertical me-2"></i>Hall Order
+                        <small class="text-muted fw-normal ms-2" style="font-size:.8rem;">Drag to reorder</small>
+                        <span class="ms-2 hall-order-saved" id="hall-order-saved">
+                            <i class="fas fa-check-circle"></i> Order updated
+                        </span>
+                    </h5>
+                    <p class="text-muted mb-2" style="font-size:.82rem;">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Drag the <strong>☰</strong> handle to reorder halls. The new order will be
+                        reflected in the seating preview and PDF generation.
+                    </p>
+                    <div id="hall-list"></div>
+                </div>
+            </div>
+
+            <!-- ── Seating algorithm ── -->
+            <div class="col-12">
+                <div class="form-card">
+                    <h5 class="form-card-title"><i class="fas fa-brain me-2"></i>Seating Algorithm</h5>
+                    <div class="row g-3">
+                        {% for key, label in seating_flows.items() %}
+                        <div class="col-md-4 col-sm-6">
+                            <label class="algo-card">
+                                <input type="radio" name="flow_type" value="{{ key }}"
+                                       {% if loop.last %}checked{% endif %}>
+                                <div class="algo-card-body">
+                                    <div class="algo-icon">
+                                        {% if key == 'zigzag' %}<i class="fas fa-random"></i>
+                                        {% elif key == 'column' %}<i class="fas fa-columns"></i>
+                                        {% elif key == 'reverse' %}<i class="fas fa-undo"></i>
+                                        {% elif key == 'progressive' %}<i class="fas fa-chart-line"></i>
+                                        {% else %}<i class="fas fa-shield-alt"></i>{% endif %}
+                                    </div>
+                                    <div class="algo-name">{{ label }}</div>
+                                </div>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Department summary ── -->
+            {% if dept_summary %}
+            <div class="col-12">
+                <div class="form-card">
+                    <h5 class="form-card-title"><i class="fas fa-chart-pie me-2"></i>Department Summary</h5>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for dept, count in dept_summary.items() %}
+                        <span class="dept-tag">{{ dept }}: <strong>{{ count }}</strong></span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- ── Submit ── -->
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary btn-lg btn-generate" id="generateBtn">
+                    <i class="fas fa-magic me-2"></i>Generate Seating Arrangement
+                </button>
+            </div>
+
+          </div>
+        </form>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script>
+const STUDENT_COUNT = {{ student_count }};
+
+/* Build the per-hall rows/cols/name input table */
+function rebuildHallTable() {
+    const numHalls   = parseInt(document.getElementById('numHalls').value) || 1;
+    const defRows    = parseInt(document.getElementById('defaultRows').value) || 5;
+    const defCols    = parseInt(document.getElementById('defaultCols').value) || 6;
+    const container  = document.getElementById('hallLayoutContainer');
+
+    let html = '<table class="hall-layout-table"><thead><tr>' +
+        '<th>#</th><th style="min-width:130px">Hall Name</th><th>Rows</th><th></th><th>Cols</th><th>Capacity</th>' +
+        '</tr></thead><tbody>';
+
+    for (let i = 1; i <= numHalls; i++) {
+        html += `<tr class="hall-row" id="hall-row-${i}">
+            <td><span class="hall-num-badge">${i}</span></td>
+            <td><input type="text" class="hall-name-input" name="hall_name_${i}"
+                       id="hall_name_${i}" placeholder="Hall ${i}" maxlength="40"
+                       oninput="syncDragCard(${i})"></td>
+            <td><input type="number" class="layout-input" name="hall_rows_${i}"
+                       id="hall_rows_${i}" min="1" max="50" value="${defRows}"
+                       oninput="updateRowCapacity(${i})"></td>
+            <td><span class="layout-sep">×</span></td>
+            <td><input type="number" class="layout-input" name="hall_cols_${i}"
+                       id="hall_cols_${i}" min="1" max="20" value="${defCols}"
+                       oninput="updateRowCapacity(${i})"></td>
+            <td><span class="hall-capacity-badge" id="cap_${i}">${defRows * defCols}</span></td>
+        </tr>`;
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    updateTotalCapacity();
+    rebuildDragList();
+}
+
+function applyDefaultsToAll() {
+    const numHalls = parseInt(document.getElementById('numHalls').value) || 1;
+    const defRows  = parseInt(document.getElementById('defaultRows').value) || 5;
+    const defCols  = parseInt(document.getElementById('defaultCols').value) || 6;
+
+    for (let i = 1; i <= numHalls; i++) {
+        const rEl = document.getElementById(`hall_rows_${i}`);
+        const cEl = document.getElementById(`hall_cols_${i}`);
+        if (rEl) rEl.value = defRows;
+        if (cEl) cEl.value = defCols;
+    }
+    updateTotalCapacity();
+}
+
+function updateRowCapacity(hallIdx) {
+    const r   = parseInt(document.getElementById(`hall_rows_${hallIdx}`).value) || 0;
+    const c   = parseInt(document.getElementById(`hall_cols_${hallIdx}`).value) || 0;
+    const cap = document.getElementById(`cap_${hallIdx}`);
+    if (cap) cap.textContent = r * c;
+    updateTotalCapacity();
+    syncDragCard(hallIdx);
+}
+
+function updateTotalCapacity() {
+    const numHalls = parseInt(document.getElementById('numHalls').value) || 1;
+    let total = 0;
+
+    for (let i = 1; i <= numHalls; i++) {
+        const r = parseInt(document.getElementById(`hall_rows_${i}`)?.value) || 0;
+        const c = parseInt(document.getElementById(`hall_cols_${i}`)?.value) || 0;
+        total += r * c;
+    }
+
+    document.getElementById('totalSeats').textContent = total;
+
+    const statusEl = document.getElementById('capacityStatus');
+    if (total >= STUDENT_COUNT) {
+        statusEl.innerHTML = '<span class="capacity-ok"><i class="fas fa-check-circle me-1"></i>Sufficient</span>';
+    } else {
+        const short = STUDENT_COUNT - total;
+        statusEl.innerHTML = `<span class="capacity-warn"><i class="fas fa-exclamation-circle me-1"></i>Need ${short} more seats</span>`;
+    }
+}
+
+/* ─── Drag & Drop Hall Preview ─── */
+let sortableInstance = null;
+
+function getHallDisplayName(i) {
+    const el = document.getElementById(`hall_name_${i}`);
+    return (el && el.value.trim()) ? el.value.trim() : `Hall ${i}`;
+}
+
+function getHallCapacity(i) {
+    const r = parseInt(document.getElementById(`hall_rows_${i}`)?.value) || 0;
+    const c = parseInt(document.getElementById(`hall_cols_${i}`)?.value) || 0;
+    return r * c;
+}
+
+function rebuildDragList() {
+    const numHalls = parseInt(document.getElementById('numHalls').value) || 1;
+    const list     = document.getElementById('hall-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+    for (let i = 1; i <= numHalls; i++) {
+        const card  = document.createElement('div');
+        card.className   = 'hall-card';
+        card.dataset.idx = i;
+        card.innerHTML   = `
+            <span class="drag-icon">☰</span>
+            <span class="hall-card-num">${i}</span>
+            <span class="hall-card-name" id="dcard-name-${i}">${getHallDisplayName(i)}</span>
+            <span class="hall-card-meta" id="dcard-meta-${i}">${getHallCapacity(i)} seats</span>`;
+        list.appendChild(card);
+    }
+
+    // Destroy & recreate SortableJS
+    if (sortableInstance) sortableInstance.destroy();
+    sortableInstance = Sortable.create(list, {
+        animation: 180,
+        handle: '.drag-icon',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        onEnd: onDragEnd
+    });
+
+    document.getElementById('hall-order-section').style.display = numHalls > 1 ? 'block' : 'none';
+}
+
+function syncDragCard(i) {
+    const nameEl = document.getElementById(`dcard-name-${i}`);
+    const metaEl = document.getElementById(`dcard-meta-${i}`);
+    if (nameEl) nameEl.textContent = getHallDisplayName(i);
+    if (metaEl) metaEl.textContent = `${getHallCapacity(i)} seats`;
+}
+
+function onDragEnd(evt) {
+    // Reorder the form table rows to match drag order
+    const list     = document.getElementById('hall-list');
+    const cards    = [...list.querySelectorAll('.hall-card')];
+    const newOrder = cards.map(c => parseInt(c.dataset.idx));   // original 1-based indices
+    const tbody    = document.querySelector('#hallLayoutContainer tbody');
+    if (!tbody) return;
+
+    // Re-insert <tr> elements in new drag order
+    const rows = {};
+    tbody.querySelectorAll('.hall-row').forEach(tr => {
+        rows[parseInt(tr.id.replace('hall-row-', ''))] = tr;
+    });
+    newOrder.forEach(idx => tbody.appendChild(rows[idx]));
+
+    // Renumber badge labels only (keep actual input names unchanged so backend matches)
+    cards.forEach((card, pos) => {
+        card.querySelector('.hall-card-num').textContent = pos + 1;
+    });
+
+    showOrderSaved();
+}
+
+function showOrderSaved() {
+    const el = document.getElementById('hall-order-saved');
+    if (!el) return;
+    el.style.display = 'inline';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.style.display = 'none', 2200);
+}
+
+document.getElementById('generateForm').addEventListener('submit', function() {
+    const btn = document.getElementById('generateBtn');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating…';
+    btn.disabled = true;
+});
+
+// Initialise on page load
+rebuildHallTable();
+</script>
+</body>
+</html>

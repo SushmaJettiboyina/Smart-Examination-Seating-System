@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Students – AI Exam Seating System v8</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        .method-toggle {
+            display: flex; gap: .3rem;
+            background: #f1f5f9; border: 1px solid var(--border);
+            border-radius: 12px; padding: .3rem; margin-bottom: 1.5rem;
+        }
+        .method-btn {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            gap: .35rem; padding: .5rem .4rem; border: none; border-radius: 9px;
+            font-size: .78rem; font-weight: 600; cursor: pointer;
+            transition: all .2s; background: transparent; color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .method-btn.active { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(26,60,94,.3); }
+        .method-btn:hover:not(.active) { background: #e2e8f0; color: var(--text); }
+        .badge-new { background:#ef4444;color:#fff;font-size:.58rem;padding:.1rem .3rem;border-radius:20px;margin-left:.15rem; }
+        .input-panel { display: none; }
+        .input-panel.active { display: block; }
+        .roll-textarea {
+            font-family:'Courier New',monospace; font-size:.88rem;
+            resize:vertical; min-height:110px;
+            border:2px solid var(--border); border-radius:10px;
+            padding:.7rem .95rem; width:100%; transition:border-color .2s; background:#fafbfc;
+        }
+        .roll-textarea:focus { border-color:var(--primary); outline:none; box-shadow:0 0 0 3px rgba(26,60,94,.1); }
+        .roll-input-sm {
+            border:2px solid var(--border); border-radius:9px;
+            padding:.5rem .85rem; width:100%; font-size:.88rem;
+            font-family:'Courier New',monospace; transition:border-color .2s; background:#fafbfc;
+        }
+        .roll-input-sm:focus { border-color:var(--primary); outline:none; box-shadow:0 0 0 3px rgba(26,60,94,.1); }
+        .preview-badge {
+            display:inline-flex; align-items:center; gap:.35rem;
+            padding:.32rem .7rem; border-radius:7px; font-size:.79rem; font-weight:600; margin-top:.7rem;
+        }
+        .preview-badge.ok   { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+        .preview-badge.err  { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+        .preview-badge.idle { background:#f8fafc; color:var(--text-muted); border:1px solid var(--border); }
+        .example-chips { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.5rem; }
+        .chip {
+            display:inline-flex; align-items:center; gap:.22rem;
+            padding:.18rem .55rem; background:var(--accent-light);
+            border:1px solid #f0d08a; border-radius:20px;
+            font-size:.7rem; font-weight:600; color:#7a5010; cursor:pointer; transition:background .15s;
+        }
+        .chip:hover { background:#fde9b0; }
+        .dept-override-wrap { margin-top:.9rem; }
+        .dept-override-wrap label { font-size:.8rem; font-weight:600; color:var(--text-muted); margin-bottom:.3rem; display:block; }
+        .dept-override-wrap select {
+            width:100%; padding:.42rem .7rem; border:1.5px solid var(--border);
+            border-radius:8px; font-size:.85rem; background:#fff; color:var(--text);
+        }
+        .dept-override-wrap select:focus { border-color:var(--primary); outline:none; }
+        .missing-section {
+            margin-top:1rem; padding:.8rem .95rem;
+            background:#fff8f0; border:1.5px solid #fed7aa; border-radius:10px;
+        }
+        .missing-section label { font-size:.8rem; font-weight:700; color:#9a3412; margin-bottom:.3rem; display:block; }
+        .how-card {
+            background:linear-gradient(135deg,#1a3c5e 0%,#2a5a8c 100%);
+            border-radius:12px; padding:1.15rem 1.35rem; color:#fff;
+        }
+        .how-card h6 { font-weight:700; margin-bottom:.7rem; font-size:.88rem; }
+        .how-step { display:flex; align-items:flex-start; gap:.6rem; margin-bottom:.55rem; }
+        .how-step:last-child { margin-bottom:0; }
+        .step-num {
+            min-width:21px; height:21px; border-radius:50%;
+            background:rgba(255,255,255,.22); display:flex; align-items:center;
+            justify-content:center; font-size:.7rem; font-weight:700;
+        }
+        .how-step p { margin:0; font-size:.79rem; opacity:.9; line-height:1.4; }
+        .badge-dept { padding:.13rem .48rem; border-radius:5px; font-size:.7rem; font-weight:600; background:var(--accent-light); color:#7a5010; }
+        .section-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:.4rem; }
+    </style>
+</head>
+<body class="app-body">
+
+<div class="sidebar">
+    <div class="sidebar-brand"><i class="fas fa-graduation-cap me-2"></i><span>Seating AI</span></div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}" class="nav-link"><i class="fas fa-th-large"></i> Dashboard</a>
+        <a href="{{ url_for('upload') }}" class="nav-link active"><i class="fas fa-upload"></i> Upload Students</a>
+        <a href="{{ url_for('generate') }}" class="nav-link"><i class="fas fa-cogs"></i> Generate Seating</a>
+        <a href="{{ url_for('seating_result') }}" class="nav-link"><i class="fas fa-table"></i> View Results</a>
+        <a href="{{ url_for('seating_preview') }}" class="nav-link"><i class="fas fa-arrows-alt"></i> Seat Editor</a>
+        <a href="/admin/edit" class="nav-link"><i class="fas fa-edit"></i> Edit Seating</a>
+        <a href="/student" class="nav-link"><i class="fas fa-search"></i> Student Search</a>
+    </nav>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link logout-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title"><h4><i class="fas fa-users me-2"></i>Add Students</h4></div>
+        <div class="topbar-right"><span class="admin-badge"><i class="fas fa-user-shield me-1"></i>Admin</span></div>
+    </div>
+
+    <div class="content-area">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}{% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+              {{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}{% endif %}
+        {% endwith %}
+
+        <div class="row g-4">
+
+            <!-- LEFT -->
+            <div class="col-lg-7">
+                <div class="form-card">
+                    <h5 class="form-card-title mb-3"><i class="fas fa-user-plus me-2"></i>Add Student Data</h5>
+
+                    <!-- 4-way toggle -->
+                    <div class="method-toggle">
+                        <button type="button" class="method-btn active" id="btnExcel" onclick="switchMethod('excel')">
+                            <i class="fas fa-file-excel"></i> Excel
+                        </button>
+                        <button type="button" class="method-btn" id="btnRange" onclick="switchMethod('range')">
+                            <i class="fas fa-list-ol"></i> Roll Range
+                        </button>
+                        <button type="button" class="method-btn" id="btnManual" onclick="switchMethod('manual')">
+                            <i class="fas fa-keyboard"></i> Manual<span class="badge-new">New</span>
+                        </button>
+                        <button type="button" class="method-btn" id="btnStartEnd" onclick="switchMethod('startend')">
+                            <i class="fas fa-arrows-alt-h"></i> Start–End<span class="badge-new">New</span>
+                        </button>
+                    </div>
+
+                    <!-- PANEL 1: Excel -->
+                    <div id="panelExcel" class="input-panel active">
+                        <form method="POST" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+                            <div class="drop-zone" id="dropZone" onclick="document.getElementById('excelFile').click()">
+                                <div class="drop-zone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+                                <div class="drop-zone-text"><strong>Click to upload</strong> or drag &amp; drop</div>
+                                <div class="drop-zone-hint">Supported: .xlsx, .xls (max 16 MB)</div>
+                                <div class="drop-zone-filename" id="selectedFileName">No file selected</div>
+                            </div>
+                            <input type="file" id="excelFile" name="excel_file" accept=".xlsx,.xls" class="d-none" onchange="updateFileName(this)">
+                            <button type="submit" class="btn btn-primary w-100 mt-3 btn-upload">
+                                <i class="fas fa-upload me-2"></i>Upload &amp; Validate
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- PANEL 2: Roll Range -->
+                    <div id="panelRange" class="input-panel">
+                        <form method="POST" action="{{ url_for('generate_roll_range_route') }}">
+                            <div class="section-label"><i class="fas fa-list-ol me-1"></i>Roll Number Range</div>
+                            <textarea name="roll_range" id="rollRangeInput" class="roll-textarea"
+                                placeholder="24IT001 TO 24IT120&#10;Multiple: 24IT001 TO 24IT060, 24CSE001 TO 24CSE050"
+                                oninput="livePreviewRange(this.value)"></textarea>
+                            <div class="example-chips">
+                                <span class="chip" onclick="fillRange('24IT001 TO 24IT120')"><i class="fas fa-magic fa-xs"></i>24IT001→24IT120</span>
+                                <span class="chip" onclick="fillRange('22CSE001 TO 22CSE060')"><i class="fas fa-magic fa-xs"></i>22CSE→60</span>
+                                <span class="chip" onclick="fillRange('24IT001 TO 24IT060, 24CSE001 TO 24CSE040')"><i class="fas fa-layer-group fa-xs"></i>Multi</span>
+                            </div>
+                            <div id="rangeBadge" class="preview-badge idle">
+                                <i class="fas fa-info-circle"></i><span id="rangePreviewText">Type a range above to preview</span>
+                            </div>
+                            <div class="missing-section">
+                                <label><i class="fas fa-user-slash me-1"></i>Missing/Absent Rolls <span class="fw-normal text-muted">(optional)</span></label>
+                                <textarea name="missing_rolls" class="roll-textarea" style="min-height:55px;"
+                                    placeholder="24IT010, 24IT015 — these will be excluded"></textarea>
+                            </div>
+                            <div class="dept-override-wrap">
+                                <label><i class="fas fa-tag me-1"></i>Department Override <span class="fw-normal text-muted">(optional)</span></label>
+                                <select name="dept_override">
+                                    <option value="">Auto-detect from roll number</option>
+                                    <option value="CSE">CSE</option><option value="IT">IT</option>
+                                    <option value="ECE">ECE</option><option value="EEE">EEE</option>
+                                    <option value="MECH">MECH</option><option value="CIVIL">CIVIL</option>
+                                    <option value="AIDS">AIDS</option><option value="AIML">AIML</option>
+                                    <option value="CSBS">CSBS</option><option value="MBA">MBA</option><option value="MCA">MCA</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 mt-3 btn-upload" id="rangeBtnSubmit" disabled>
+                                <i class="fas fa-bolt me-2"></i>Generate Students from Range
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- PANEL 3: Manual Entry -->
+                    <div id="panelManual" class="input-panel">
+                        <form method="POST" action="{{ url_for('generate_manual_rolls_route') }}">
+                            <div class="section-label"><i class="fas fa-keyboard me-1"></i>Enter Roll Numbers</div>
+                            <p class="text-muted small mb-2">One per line or comma-separated. Duplicates auto-removed.</p>
+                            <textarea name="manual_rolls" id="manualInput" class="roll-textarea" style="min-height:130px;"
+                                placeholder="24IT001&#10;24IT002&#10;24IT003&#10;&#10;OR: 24IT001, 24IT002, 24IT003"
+                                oninput="livePreviewManual(this.value)"></textarea>
+                            <div id="manualBadge" class="preview-badge idle">
+                                <i class="fas fa-info-circle"></i><span id="manualPreviewText">Enter roll numbers above to preview count</span>
+                            </div>
+                            <div class="missing-section">
+                                <label><i class="fas fa-user-slash me-1"></i>Exclude Roll Numbers <span class="fw-normal text-muted">(optional)</span></label>
+                                <textarea name="missing_rolls" class="roll-textarea" style="min-height:55px;"
+                                    placeholder="24IT005, 24IT012 — will be excluded"></textarea>
+                            </div>
+                            <div class="dept-override-wrap">
+                                <label><i class="fas fa-tag me-1"></i>Department Override <span class="fw-normal text-muted">(optional)</span></label>
+                                <select name="dept_override">
+                                    <option value="">Auto-detect from roll number</option>
+                                    <option value="CSE">CSE</option><option value="IT">IT</option>
+                                    <option value="ECE">ECE</option><option value="EEE">EEE</option>
+                                    <option value="MECH">MECH</option><option value="CIVIL">CIVIL</option>
+                                    <option value="AIDS">AIDS</option><option value="AIML">AIML</option>
+                                    <option value="CSBS">CSBS</option><option value="MBA">MBA</option><option value="MCA">MCA</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 mt-3 btn-upload" id="manualBtnSubmit" disabled>
+                                <i class="fas fa-check-circle me-2"></i>Load Manual Roll Numbers
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- PANEL 4: Start–End -->
+                    <div id="panelStartEnd" class="input-panel">
+                        <form method="POST" action="{{ url_for('generate_start_end_route') }}">
+                            <div class="section-label"><i class="fas fa-arrows-alt-h me-1"></i>Start &amp; End Roll Number</div>
+                            <p class="text-muted small mb-3">Enter the first and last roll — same prefix required.</p>
+                            <div class="row g-3 mb-1">
+                                <div class="col-6">
+                                    <label class="form-label" style="font-size:.82rem;font-weight:600;">Start Roll No.</label>
+                                    <input type="text" name="start_roll" id="startRollInput" class="roll-input-sm"
+                                           placeholder="24IT001" oninput="livePreviewStartEnd()" autocomplete="off">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label" style="font-size:.82rem;font-weight:600;">End Roll No.</label>
+                                    <input type="text" name="end_roll" id="endRollInput" class="roll-input-sm"
+                                           placeholder="24IT120" oninput="livePreviewStartEnd()" autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="example-chips mb-1">
+                                <span class="chip" onclick="fillStartEnd('24IT001','24IT120')"><i class="fas fa-magic fa-xs"></i>24IT001→120</span>
+                                <span class="chip" onclick="fillStartEnd('22CSE001','22CSE060')"><i class="fas fa-magic fa-xs"></i>22CSE001→60</span>
+                                <span class="chip" onclick="fillStartEnd('CS01','CS50')"><i class="fas fa-magic fa-xs"></i>CS01→50</span>
+                            </div>
+                            <div id="startEndBadge" class="preview-badge idle">
+                                <i class="fas fa-info-circle"></i><span id="startEndPreviewText">Enter Start and End to preview</span>
+                            </div>
+                            <div class="missing-section">
+                                <label><i class="fas fa-user-slash me-1"></i>Missing/Absent Rolls <span class="fw-normal text-muted">(optional)</span></label>
+                                <textarea name="missing_rolls" class="roll-textarea" style="min-height:55px;"
+                                    placeholder="24IT010, 24IT015 — will be excluded"></textarea>
+                            </div>
+                            <div class="dept-override-wrap">
+                                <label><i class="fas fa-tag me-1"></i>Department Override <span class="fw-normal text-muted">(optional)</span></label>
+                                <select name="dept_override">
+                                    <option value="">Auto-detect from roll number</option>
+                                    <option value="CSE">CSE</option><option value="IT">IT</option>
+                                    <option value="ECE">ECE</option><option value="EEE">EEE</option>
+                                    <option value="MECH">MECH</option><option value="CIVIL">CIVIL</option>
+                                    <option value="AIDS">AIDS</option><option value="AIML">AIML</option>
+                                    <option value="CSBS">CSBS</option><option value="MBA">MBA</option><option value="MCA">MCA</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 mt-3 btn-upload" id="startEndBtnSubmit" disabled>
+                                <i class="fas fa-play-circle me-2"></i>Generate Students from Start–End
+                            </button>
+                        </form>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- RIGHT: Info panels -->
+            <div class="col-lg-5">
+                <div id="infoExcel">
+                    <div class="form-card">
+                        <h5 class="form-card-title"><i class="fas fa-info-circle me-2"></i>Required Excel Format</h5>
+                        <p class="text-muted small mb-3">Your file must contain at least these columns:</p>
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead class="table-dark"><tr><th>RollNo</th><th>Department</th></tr></thead>
+                            <tbody>
+                                <tr><td>24IT001</td><td>IT</td></tr>
+                                <tr><td>22CSE001</td><td>CSE</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="checklist mt-3">
+                            <div class="check-item"><i class="fas fa-check-circle text-success me-2"></i>Columns: <strong>RollNo</strong>, <strong>Department</strong></div>
+                            <div class="check-item"><i class="fas fa-check-circle text-success me-2"></i>No duplicate register numbers</div>
+                            <div class="check-item"><i class="fas fa-check-circle text-success me-2"></i>No empty cells</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="infoRange" style="display:none;">
+                    <div class="how-card mb-3">
+                        <h6><i class="fas fa-list-ol me-2"></i>Roll Range Mode</h6>
+                        <div class="how-step"><div class="step-num">1</div><p>Type <strong>24IT001 TO 24IT120</strong>.</p></div>
+                        <div class="how-step"><div class="step-num">2</div><p>Department auto-detected from prefix.</p></div>
+                        <div class="how-step"><div class="step-num">3</div><p>Comma-separate for multiple ranges.</p></div>
+                        <div class="how-step"><div class="step-num">4</div><p>Add missing rolls to exclude absent students.</p></div>
+                    </div>
+                    <div class="form-card">
+                        <h5 class="form-card-title"><i class="fas fa-code me-2"></i>Supported Formats</h5>
+                        <table class="table table-sm table-borderless mb-0" style="font-size:.8rem;">
+                            <thead><tr class="text-muted"><th>Input</th><th>Dept</th><th>#</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>24IT001 TO 24IT120</code></td><td><span class="badge-dept">IT</span></td><td>120</td></tr>
+                                <tr><td><code>22CSE001 TO 22CSE060</code></td><td><span class="badge-dept">CSE</span></td><td>60</td></tr>
+                                <tr><td><code>CS01 TO CS50</code></td><td><span class="badge-dept">CS</span></td><td>50</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="infoManual" style="display:none;">
+                    <div class="how-card mb-3">
+                        <h6><i class="fas fa-keyboard me-2"></i>Manual Entry Mode</h6>
+                        <div class="how-step"><div class="step-num">1</div><p>Paste roll numbers — one per line or comma-separated.</p></div>
+                        <div class="how-step"><div class="step-num">2</div><p>Duplicates automatically removed.</p></div>
+                        <div class="how-step"><div class="step-num">3</div><p>Mix different departments freely.</p></div>
+                        <div class="how-step"><div class="step-num">4</div><p>Great for non-sequential lists.</p></div>
+                    </div>
+                    <div class="form-card">
+                        <h5 class="form-card-title"><i class="fas fa-clipboard-list me-2"></i>Example</h5>
+                        <pre style="font-size:.79rem;background:#f8fafc;border-radius:8px;padding:.7rem;margin:0;border:1px solid var(--border);">24IT001
+24IT002
+24IT005
+24CSE010, 24CSE011</pre>
+                        <p class="text-muted small mt-2 mb-0">Each prefix auto-detected for dept.</p>
+                    </div>
+                </div>
+
+                <div id="infoStartEnd" style="display:none;">
+                    <div class="how-card mb-3">
+                        <h6><i class="fas fa-arrows-alt-h me-2"></i>Start–End Mode</h6>
+                        <div class="how-step"><div class="step-num">1</div><p>Enter <strong>Start</strong> and <strong>End</strong> roll — same prefix.</p></div>
+                        <div class="how-step"><div class="step-num">2</div><p>All numbers between are generated with zero-padding.</p></div>
+                        <div class="how-step"><div class="step-num">3</div><p>Add missing rolls to exclude absent students.</p></div>
+                        <div class="how-step"><div class="step-num">4</div><p>Simpler than Range — no need to type "TO".</p></div>
+                    </div>
+                    <div class="form-card">
+                        <h5 class="form-card-title"><i class="fas fa-info-circle me-2"></i>Example</h5>
+                        <div class="row g-2 text-center">
+                            <div class="col-5"><div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:.55rem;"><div style="font-size:.65rem;color:#3b82f6;font-weight:700;">START</div><div style="font-family:monospace;font-weight:700;font-size:.85rem;">24IT001</div></div></div>
+                            <div class="col-2 d-flex align-items-center justify-content-center"><i class="fas fa-arrow-right text-muted"></i></div>
+                            <div class="col-5"><div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.55rem;"><div style="font-size:.65rem;color:#16a34a;font-weight:700;">END</div><div style="font-family:monospace;font-weight:700;font-size:.85rem;">24IT120</div></div></div>
+                        </div>
+                        <p class="text-muted small mt-2 mb-0 text-center">→ 120 students: 24IT001 … 24IT120</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+<script>
+const METHODS  = ['excel','range','manual','startend'];
+const PANEL_ID = {excel:'panelExcel',range:'panelRange',manual:'panelManual',startend:'panelStartEnd'};
+const INFO_ID  = {excel:'infoExcel', range:'infoRange', manual:'infoManual', startend:'infoStartEnd'};
+const BTN_ID   = {excel:'btnExcel',  range:'btnRange',  manual:'btnManual',  startend:'btnStartEnd'};
+
+function switchMethod(method) {
+    METHODS.forEach(m => {
+        document.getElementById(PANEL_ID[m]).classList.toggle('active', m === method);
+        document.getElementById(INFO_ID[m]).style.display  = m === method ? '' : 'none';
+        document.getElementById(BTN_ID[m]).classList.toggle('active', m === method);
+    });
+}
+
+function updateFileName(input) {
+    document.getElementById('selectedFileName').textContent = input.files[0]?.name || 'No file selected';
+    if (input.files[0]) document.getElementById('dropZone').classList.add('has-file');
+}
+const dz = document.getElementById('dropZone');
+['dragenter','dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); }));
+['dragleave','drop'].forEach(e =>     dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('drag-over'); }));
+dz.addEventListener('drop', ev => {
+    const f = ev.dataTransfer.files[0];
+    if (f) { const inp = document.getElementById('excelFile'); const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files; updateFileName(inp); }
+});
+
+const DEPT_KW = ['MECH','CIVIL','AIDS','AIML','CSBS','CSE','ECE','EEE','MBA','MCA','MCE','BME','CSD','IT','CS','EE','ME','CE','IS','DS','AI'];
+function detectDept(p) {
+    const u = p.toUpperCase().replace(/^\d+/, '');
+    for (const k of DEPT_KW) if (u.includes(k)) return k;
+    return u || p.toUpperCase();
+}
+function splitRoll(r) { const m = r.trim().toUpperCase().match(/^(.*?)(\d+)$/); return m ? [m[1],m[2]] : [null,null]; }
+function setBadge(bId, tId, btnId, ok, text) {
+    const b = document.getElementById(bId), t = document.getElementById(tId), btn = document.getElementById(btnId);
+    if (b) b.className = 'preview-badge ' + (ok===null?'idle':ok?'ok':'err');
+    if (t) t.textContent = text;
+    if (btn) btn.disabled = !ok;
+}
+
+/* Range */
+function parseSingleRange(s) {
+    const m = s.trim().match(/^(.+?)\s+TO\s+(.+)$/i); if (!m) return {error:'Invalid: "'+s+'"'};
+    const [sp,sn]=splitRoll(m[1].trim()), [ep,en]=splitRoll(m[2].trim());
+    if (!sp) return {error:'Bad start: "'+m[1]+'"'}; if (!ep) return {error:'Bad end: "'+m[2]+'"'};
+    if (sp!==ep) return {error:'Prefix mismatch: "'+sp+'" ≠ "'+ep+'"'};
+    const a=parseInt(sn,10), b=parseInt(en,10);
+    if (a>b) return {error:'Start ('+a+') > end ('+b+')'}; if (b-a+1>2000) return {error:'Range > 2000'};
+    return {dept:detectDept(sp),count:b-a+1};
+}
+function livePreviewRange(v) {
+    if (!v||!v.trim()) { setBadge('rangeBadge','rangePreviewText','rangeBtnSubmit',null,'Type a range to preview'); return; }
+    const parts=v.split(',').map(s=>s.trim()).filter(Boolean); let total=0,depts={},err=null;
+    for (const p of parts) { const r=parseSingleRange(p); if (r.error){err=r.error;break;} total+=r.count; depts[r.dept]=(depts[r.dept]||0)+r.count; }
+    if (err) setBadge('rangeBadge','rangePreviewText','rangeBtnSubmit',false,'⚠ '+err);
+    else setBadge('rangeBadge','rangePreviewText','rangeBtnSubmit',true,'✓ '+total+' students | '+Object.entries(depts).map(([d,c])=>d+': '+c).join(' · '));
+}
+function fillRange(t) { const ta=document.getElementById('rollRangeInput'); ta.value=t; ta.focus(); livePreviewRange(t); }
+
+/* Manual */
+function livePreviewManual(v) {
+    if (!v||!v.trim()) { setBadge('manualBadge','manualPreviewText','manualBtnSubmit',null,'Enter rolls to preview'); return; }
+    const tokens=v.split(/[,\n]+/).map(t=>t.trim().toUpperCase()).filter(Boolean);
+    const bad=tokens.filter(t=>!/^[A-Z0-9]+$/.test(t));
+    if (bad.length) { setBadge('manualBadge','manualPreviewText','manualBtnSubmit',false,'⚠ Invalid: "'+bad[0]+'"'); return; }
+    const unique=[...new Set(tokens)], depts={};
+    unique.forEach(t=>{ const m=t.match(/^(.*?)(\d+)$/),p=m?m[1]:t,d=detectDept(p); depts[d]=(depts[d]||0)+1; });
+    const dup=tokens.length>unique.length?' ('+(tokens.length-unique.length)+' dups removed)':'';
+    setBadge('manualBadge','manualPreviewText','manualBtnSubmit',true,'✓ '+unique.length+' students | '+Object.entries(depts).map(([d,c])=>d+': '+c).join(' · ')+dup);
+}
+
+/* Start-End */
+function livePreviewStartEnd() {
+    const s=document.getElementById('startRollInput').value.trim().toUpperCase();
+    const e=document.getElementById('endRollInput').value.trim().toUpperCase();
+    if (!s||!e) { setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',null,'Enter Start and End to preview'); return; }
+    const [sp,sn]=splitRoll(s), [ep,en]=splitRoll(e);
+    if (!sp) { setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',false,'⚠ Bad start: "'+s+'"'); return; }
+    if (!ep) { setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',false,'⚠ Bad end: "'+e+'"'); return; }
+    if (sp!==ep) { setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',false,'⚠ Prefix mismatch: "'+sp+'" ≠ "'+ep+'"'); return; }
+    const a=parseInt(sn,10),b=parseInt(en,10);
+    if (a>b) { setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',false,'⚠ Start ('+a+') > end ('+b+')'); return; }
+    if (b-a+1>2000) { setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',false,'⚠ Range > 2000'); return; }
+    setBadge('startEndBadge','startEndPreviewText','startEndBtnSubmit',true,'✓ '+(b-a+1)+' students | Prefix: '+sp+' | Dept: '+detectDept(sp));
+}
+function fillStartEnd(s,e) { document.getElementById('startRollInput').value=s; document.getElementById('endRollInput').value=e; livePreviewStartEnd(); }
+
+/* Auto-switch from URL param */
+(function(){ const m=new URLSearchParams(window.location.search).get('method'); if(METHODS.includes(m)) switchMethod(m); })();
+</script>
+</body>
+</html>

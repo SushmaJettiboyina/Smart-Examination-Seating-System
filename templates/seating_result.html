@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seating Result – AI Exam Seating System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        .view-toggle-bar{display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;}
+        .view-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.35rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;background:#fff;color:var(--text-muted);transition:all .18s;}
+        .view-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+        .view-btn:hover:not(.active){background:#f1f5f9;color:var(--text);}
+        .hall-grid-view{display:none;}
+        .hall-grid-view.active{display:block;}
+        .hall-table-view.hidden{display:none;}
+        .seat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.5rem;padding:1rem;}
+        .seat-card{background:#fff;border:2px solid var(--border);border-radius:10px;padding:.6rem .5rem;text-align:center;transition:transform .15s,box-shadow .15s;}
+        .seat-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.12);}
+        .seat-card .sc-num{font-size:.62rem;color:var(--text-muted);margin-bottom:.12rem;}
+        .seat-card .sc-roll{font-size:.78rem;font-weight:700;color:var(--primary);word-break:break-all;}
+        .seat-card .sc-dept{font-size:.63rem;margin-top:.2rem;padding:.1rem .35rem;border-radius:12px;display:inline-block;background:#f1f5f9;color:#475569;}
+        .seat-card.seat-empty-card{background:#f8fafc;border-style:dashed;opacity:.4;}
+        .bench-row-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:.3rem .75rem;background:#f8fafc;border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
+        .hall-summary-cards{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem;}
+        .hs-card{background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:.6rem .9rem;min-width:110px;text-align:center;}
+        .hs-card .hs-val{font-size:1.3rem;font-weight:800;color:var(--primary);}
+        .hs-card .hs-lbl{font-size:.7rem;color:var(--text-muted);}
+    </style>
+</head>
+<body class="app-body">
+
+<!-- Sidebar -->
+<div class="sidebar">
+    <div class="sidebar-brand">
+        <i class="fas fa-graduation-cap me-2"></i>
+        <span>Seating AI</span>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}" class="nav-link">
+            <i class="fas fa-th-large"></i> Dashboard
+        </a>
+        <a href="{{ url_for('upload') }}" class="nav-link">
+            <i class="fas fa-upload"></i> Upload Students
+        </a>
+        <a href="{{ url_for('generate') }}" class="nav-link">
+            <i class="fas fa-cogs"></i> Generate Seating
+        </a>
+        <a href="{{ url_for('seating_result') }}" class="nav-link active">
+            <i class="fas fa-table"></i> View Results
+        </a>
+    </nav>
+        <a href="/admin/edit" class="nav-link">
+            <i class="fas fa-edit"></i> Edit Seating
+        </a>
+        <a href="/student" class="nav-link">
+            <i class="fas fa-search"></i> Student Search
+        </a>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link logout-link">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title">
+            <h4><i class="fas fa-table me-2"></i>Seating Result</h4>
+        </div>
+        <div class="topbar-right">
+            {% if pdf_files %}
+            <a href="{{ url_for('download_all_pdfs') }}" class="btn btn-sm btn-accent me-2">
+                <i class="fas fa-download me-1"></i>Download All PDFs
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="content-area">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        {% if not halls %}
+          <div class="empty-state">
+              <i class="fas fa-chair"></i>
+              <h5>No Seating Arrangement Yet</h5>
+              <p>Please generate a seating arrangement first.</p>
+              <a href="{{ url_for('generate') }}" class="btn btn-primary">Generate Now</a>
+          </div>
+        {% else %}
+
+        <!-- Exam Header -->
+        {% if exam_info %}
+        <div class="result-header mb-4">
+            <div>
+        <h3>Examination Seating Arrangement</h3>
+
+        <p class="mb-0">
+            <strong>{{ exam_info.exam_name }}</strong>
+            &nbsp;|&nbsp;
+            {{ exam_info.exam_date }}
+
+            {% if exam_info.exam_start_time %}
+                &nbsp;|&nbsp;
+                <strong>Start:</strong> {{ exam_info.exam_start_time }}
+            {% endif %}
+
+            {% if exam_info.exam_end_time %}
+                &nbsp;|&nbsp;
+                <strong>End:</strong> {{ exam_info.exam_end_time }}
+            {% endif %}
+        </p>
+    </div>
+            <div class="result-header-meta">
+                <span class="meta-tag">{{ stats.total_halls }} Halls</span>
+                <span class="meta-tag">{{ stats.total_students }} Students</span>
+                <span class="meta-tag">{{ stats.utilization_pct }}% Utilization</span>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Hall Tabs -->
+        <ul class="nav nav-tabs hall-tabs mb-0" id="hallTabs" role="tablist">
+            {% for hall in halls %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if loop.first %}active{% endif %}"
+                        id="hall-tab-{{ hall.hall_number }}"
+                        data-bs-toggle="tab"
+                        data-bs-target="#hall-pane-{{ hall.hall_number }}"
+                        type="button">
+                    <i class="fas fa-door-open me-1"></i>{{ hall.hall_name if hall.hall_name else 'Hall ' ~ hall.hall_number }}
+                    <span class="badge ms-1">{{ hall.total_students }}</span>
+                </button>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <div class="tab-content hall-tab-content" id="hallTabsContent">
+            {% for hall in halls %}
+            <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                 id="hall-pane-{{ hall.hall_number }}">
+
+                <!-- Hall Header -->
+                <div class="hall-header">
+                    <div>
+                        <h5 class="mb-0">{{ hall.hall_name if hall.hall_name else 'Hall ' ~ hall.hall_number }}</h5>
+                        <small>{{ hall.total_students }} students &nbsp;|&nbsp; {{ hall.benches|length }} benches</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <!-- View Toggle -->
+                        <div class="view-toggle-bar mb-0">
+                            <button class="view-btn active" onclick="setView({{ hall.hall_number }},'table',this)">
+                                <i class="fas fa-table"></i> Table
+                            </button>
+                            <button class="view-btn" onclick="setView({{ hall.hall_number }},'grid',this)">
+                                <i class="fas fa-th"></i> Grid
+                            </button>
+                        </div>
+                        {% if pdf_files %}
+                        <a href="{{ url_for('download_pdf', hall_number=hall.hall_number) }}"
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-file-pdf me-1"></i>PDF
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Summary cards -->
+                <div class="hall-summary-cards">
+                    <div class="hs-card"><div class="hs-val">{{ hall.total_students }}</div><div class="hs-lbl">Students</div></div>
+                    <div class="hs-card"><div class="hs-val">{{ hall.benches|length }}</div><div class="hs-lbl">Benches</div></div>
+                    {% if hall.benches and hall.benches[0] %}
+                    <div class="hs-card"><div class="hs-val">{{ hall.benches[0]|length }}</div><div class="hs-lbl">Seats/Bench</div></div>
+                    {% endif %}
+                </div>
+
+                <!-- ── TABLE VIEW ── -->
+                <div id="tableView{{ hall.hall_number }}" class="hall-table-view">
+                <div class="table-responsive seating-table-wrap">
+                    <table class="table seating-table">
+                        <thead>
+                            <tr>
+                                <th class="bench-col">Bench</th>
+                                {% if hall.benches %}
+                                    {% set max_seats = namespace(val=0) %}
+                                    {% for bench in hall.benches %}
+                                        {% if bench|length > max_seats.val %}
+                                            {% set max_seats.val = bench|length %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% for i in range(max_seats.val) %}
+                                    <th>Seat {{ i + 1 }}</th>
+                                    {% endfor %}
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bench in hall.benches %}
+                            <tr>
+                                <td class="bench-num">{{ loop.index }}</td>
+                                {% for student in bench %}
+                                <td>
+                                    <div class="seat-cell dept-{{ student.department|lower }}">
+                                        <div class="seat-roll">{{ student.register_number }}</div>
+                                        <div class="seat-dept">{{ student.department }}</div>
+                                    </div>
+                                </td>
+                                {% endfor %}
+                                <!-- Empty seats -->
+                                {% if bench|length < max_seats.val %}
+                                    {% for _ in range(max_seats.val - bench|length) %}
+                                    <td><div class="seat-cell seat-empty">—</div></td>
+                                    {% endfor %}
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                </div><!-- /tableView -->
+
+                <!-- ── GRID VIEW ── -->
+                <div id="gridView{{ hall.hall_number }}" class="hall-grid-view">
+                    {% for bench in hall.benches %}
+                    <p class="bench-row-label">Bench {{ loop.index }}</p>
+                    <div class="seat-grid" style="grid-template-columns:repeat({{ hall.benches[0]|length if hall.benches else 3 }},1fr);">
+                        {% for student in bench %}
+                        {% if student %}
+                        <div class="seat-card">
+                            <div class="sc-num">B{{ loop.index0 // 1 + 1 }}</div>
+                            <div class="sc-roll">{{ student.register_number }}</div>
+                            <div class="sc-dept">{{ student.department }}</div>
+                        </div>
+                        {% else %}
+                        <div class="seat-card seat-empty-card">
+                            <div class="sc-roll" style="color:#ccc;">—</div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div><!-- /gridView -->
+
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Department Color Legend -->
+        {% if stats and stats.department_breakdown %}
+        <div class="dept-legend mt-4">
+            <h6 class="mb-2">Department Legend</h6>
+            <div class="d-flex flex-wrap gap-2">
+                {% for dept in stats.department_breakdown.keys() %}
+                <span class="legend-tag dept-{{ dept|lower }}">
+                    {{ dept }}: {{ stats.department_breakdown[dept] }} students
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ── Drag & Drop Hall Reorder Panel ── -->
+        {% if halls and halls|length > 1 %}
+        <div class="mt-4">
+            <div class="form-card" style="border-radius:var(--radius);border:1px solid var(--border);padding:1.25rem;background:var(--card-bg);">
+                <h5 style="font-size:1rem;font-weight:700;color:var(--primary);margin-bottom:.4rem;">
+                    <i class="fas fa-grip-vertical me-2"></i>Reorder Halls
+                    <small class="text-muted fw-normal ms-2" style="font-size:.78rem;">Drag to change order → updates preview &amp; PDF</small>
+                </h5>
+                <p class="text-muted mb-3" style="font-size:.82rem;">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Drag a hall card by the <strong>☰</strong> handle to reorder.
+                    Click <strong>Apply Order</strong> to save and regenerate PDFs.
+                </p>
+                <div id="result-hall-list" style="display:flex;flex-direction:column;gap:.55rem;margin-bottom:1rem;">
+                    {% for hall in halls %}
+                    <div class="result-hall-card" data-idx="{{ loop.index0 }}"
+                         style="display:flex;align-items:center;gap:.75rem;background:#fff;border:1.5px solid var(--border);
+                                border-radius:12px;padding:.65rem 1rem;cursor:grab;user-select:none;
+                                box-shadow:0 2px 6px rgba(0,0,0,.06);transition:box-shadow .2s,border-color .2s;">
+                        <span style="font-size:1.1rem;color:var(--text-muted);flex-shrink:0;">☰</span>
+                        <span style="display:inline-flex;align-items:center;justify-content:center;
+                                     width:30px;height:30px;border-radius:8px;background:var(--primary);
+                                     color:#fff;font-size:.75rem;font-weight:700;flex-shrink:0;">
+                            {{ loop.index }}
+                        </span>
+                        <span style="font-weight:600;font-size:.9rem;color:var(--text);flex:1;">
+                            {{ hall.hall_name if hall.hall_name else 'Hall ' ~ hall.hall_number }}
+                        </span>
+                        <span style="font-size:.75rem;color:var(--text-muted);">
+                            {{ hall.total_students }} students
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="display:flex;align-items:center;gap:1rem;">
+                    <button class="btn btn-primary btn-sm" id="applyOrderBtn" onclick="applyHallOrder()">
+                        <i class="fas fa-check me-1"></i>Apply Order
+                    </button>
+                    <span id="order-status" style="font-size:.82rem;color:#16a34a;display:none;">
+                        <i class="fas fa-check-circle me-1"></i>Order saved! Refreshing…
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+<script>
+/* v8 – Table / Grid view toggle */
+function setView(hallNum, mode, btn) {
+    const tableDiv = document.getElementById('tableView' + hallNum);
+    const gridDiv  = document.getElementById('gridView'  + hallNum);
+    const allBtns  = btn.closest('.view-toggle-bar').querySelectorAll('.view-btn');
+    allBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (mode === 'grid') {
+        tableDiv.classList.add('hidden');
+        gridDiv.classList.add('active');
+    } else {
+        tableDiv.classList.remove('hidden');
+        gridDiv.classList.remove('active');
+    }
+}
+</script>
+<script>
+(function () {
+    const listEl = document.getElementById('result-hall-list');
+    if (!listEl) return;
+
+    Sortable.create(listEl, {
+        animation: 180,
+        handle: 'span:first-child',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+    });
+
+    window.applyHallOrder = function () {
+        const cards    = [...listEl.querySelectorAll('.result-hall-card')];
+        const newOrder = cards.map(c => parseInt(c.dataset.idx));
+
+        const btn = document.getElementById('applyOrderBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+
+        fetch('/update-hall-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: newOrder })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const statusEl = document.getElementById('order-status');
+                statusEl.style.display = 'inline';
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                alert('Error: ' + data.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i>Apply Order';
+            }
+        })
+        .catch(() => {
+            alert('Network error. Please try again.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check me-1"></i>Apply Order';
+        });
+    };
+})();
+</script>
+</body>
+</html>

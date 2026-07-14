@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Seating – Admin Panel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <!-- SortableJS for drag & drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <!-- html2canvas for image export (Feature 5) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --primary: #1a3c5e;
+            --accent:  #e8a020;
+        }
+
+        /* --- Filter bar --- */
+        .filter-bar {
+            background: #fff;
+            border-radius: 14px;
+            padding: 18px 22px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            margin-bottom: 22px;
+        }
+
+        .filter-bar select, .filter-bar input {
+            border-radius: 8px;
+            border: 1.5px solid #e5e7eb;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+
+        /* --- Editable field --- */
+        .editable-field {
+            border: none;
+            border-bottom: 2px dashed #cbd5e1;
+            background: transparent;
+            font-size: inherit;
+            font-weight: inherit;
+            color: inherit;
+            width: 100%;
+            padding: 2px 4px;
+            transition: border-color 0.2s;
+        }
+
+        .editable-field:focus {
+            outline: none;
+            border-bottom-color: var(--accent);
+            background: #fef9ec;
+        }
+
+        /* --- Seating card --- */
+        .hall-section {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 18px rgba(0,0,0,0.09);
+            margin-bottom: 28px;
+            overflow: hidden;
+        }
+
+        .hall-header {
+            background: linear-gradient(135deg, var(--primary), #2563eb);
+            color: #fff;
+            padding: 16px 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .hall-title-input {
+            color: #fff;
+            font-size: 1.15rem;
+            font-weight: 700;
+            border-bottom-color: rgba(255,255,255,0.4);
+        }
+
+        .hall-title-input:focus { background: rgba(255,255,255,0.1); }
+
+        /* --- Seating grid --- */
+        .seat-grid { padding: 16px; }
+
+        .bench-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            background: #f8fafc;
+            border: 1.5px solid transparent;
+            cursor: grab;
+            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .bench-row:hover {
+            background: #eef2ff;
+            border-color: #c7d2fe;
+        }
+
+        .bench-row.sortable-ghost {
+            opacity: 0.4;
+            background: #e0e7ff;
+            border-color: #6366f1;
+        }
+
+        .bench-row.sortable-chosen {
+            box-shadow: 0 6px 20px rgba(99,102,241,0.25);
+            border-color: #6366f1;
+        }
+
+        .row-num {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #6b7280;
+            min-width: 28px;
+            text-align: center;
+        }
+
+        .drag-handle {
+            color: #9ca3af;
+            cursor: grab;
+            font-size: 14px;
+        }
+
+        .seat-cell {
+            flex: 1;
+            background: #fff;
+            border: 1.5px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.78rem;
+            text-align: center;
+            min-width: 80px;
+        }
+
+        .seat-cell.occupied {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1e40af;
+            font-weight: 600;
+        }
+
+        .seat-cell.empty {
+            background: #f9fafb;
+            color: #d1d5db;
+            font-style: italic;
+        }
+
+        .seat-dept {
+            font-size: 0.68rem;
+            color: #7c3aed;
+            font-weight: 500;
+        }
+
+        /* Dept badge colors */
+        .dept-CSE  { color: #1d4ed8; }
+        .dept-IT   { color: #0891b2; }
+        .dept-ECE  { color: #7c3aed; }
+        .dept-EEE  { color: #b45309; }
+        .dept-MECH { color: #047857; }
+        .dept-CIVIL { color: #be123c; }
+
+        /* Filter result table */
+        .filter-results {
+            display: none;
+            background: #fff;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            margin-bottom: 22px;
+        }
+
+        .filter-results table { font-size: 0.87rem; }
+        .filter-results .badge-dept {
+            background: #ede9fe; color: #5b21b6;
+            border-radius: 6px; padding: 2px 8px; font-size: 0.78rem;
+        }
+
+        /* Toolbar */
+        .edit-toolbar {
+            position: sticky;
+            top: 10px;
+            z-index: 100;
+            background: #fff;
+            border-radius: 14px;
+            padding: 12px 18px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+            margin-bottom: 22px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .toast-msg {
+            position: fixed;
+            bottom: 20px; right: 20px;
+            background: #1a3c5e;
+            color: #fff;
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-size: 0.9rem;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        .toast-msg.show { opacity: 1; }
+    </style>
+</head>
+<body class="app-body">
+
+<!-- Sidebar -->
+<div class="sidebar">
+    <div class="sidebar-brand">
+        <i class="fas fa-graduation-cap me-2"></i>
+        <span>Seating AI</span>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}" class="nav-link">
+            <i class="fas fa-th-large"></i> Dashboard
+        </a>
+        <a href="{{ url_for('upload') }}" class="nav-link">
+            <i class="fas fa-upload"></i> Upload Students
+        </a>
+        <a href="{{ url_for('generate') }}" class="nav-link">
+            <i class="fas fa-cogs"></i> Generate Seating
+        </a>
+        <a href="{{ url_for('seating_result') }}" class="nav-link">
+            <i class="fas fa-table"></i> View Results
+        </a>
+        <a href="{{ url_for('admin_edit') }}" class="nav-link active">
+            <i class="fas fa-edit"></i> Edit Seating
+        </a>
+        <a href="{{ url_for('student_search') }}" class="nav-link">
+            <i class="fas fa-search"></i> Student Search
+        </a>
+    </nav>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link logout-link">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title">
+            <h4><i class="fas fa-edit me-2"></i>Edit Seating Arrangement</h4>
+        </div>
+    </div>
+
+    <div class="content-area p-3">
+
+        <!-- Sticky Toolbar -->
+        <div class="edit-toolbar">
+            <button class="btn btn-sm btn-success" onclick="saveAllEdits()">
+                <i class="fas fa-save me-1"></i> Save Changes
+            </button>
+            <button class="btn btn-sm btn-primary" onclick="downloadAsImage()">
+                <i class="fas fa-image me-1"></i> Download as Image
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="toggleFilters()">
+                <i class="fas fa-filter me-1"></i> Filter View
+            </button>
+            <a href="{{ url_for('seating_result') }}" class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Results
+            </a>
+            <span class="text-muted ms-auto" style="font-size:0.8rem">
+                <i class="fas fa-info-circle me-1"></i>
+                Drag rows to reorder &bull; Click text to edit
+            </span>
+        </div>
+
+        <!-- Feature 6: Filter System -->
+        <div class="filter-bar" id="filterBar" style="display:none">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold" style="font-size:0.82rem">Department</label>
+                    <select id="filterDept" class="form-select form-select-sm">
+                        <option value="">All Departments</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold" style="font-size:0.82rem">Hall</label>
+                    <select id="filterHall" class="form-select form-select-sm">
+                        <option value="">All Halls</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold" style="font-size:0.82rem">Register Number</label>
+                    <input type="text" id="filterReg" class="form-control form-control-sm"
+                           placeholder="Search register number…">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-sm btn-primary w-100" onclick="applyFilter()">
+                        <i class="fas fa-search me-1"></i>Search
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter results -->
+        <div class="filter-results" id="filterResults">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0 fw-bold text-primary">
+                    <i class="fas fa-list me-1"></i>
+                    Filter Results: <span id="filterCount">0</span> students
+                </h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearFilter()">
+                    <i class="fas fa-times me-1"></i>Clear
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Register No.</th>
+                            <th>Department</th>
+                            <th>Hall</th>
+                            <th>Seat</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="filterTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Global Info Editing -->
+        <div class="hall-section mb-4">
+            <div class="hall-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-file-alt me-2"></i>
+                    Exam Information
+                </h5>
+            </div>
+            <div style="padding:18px 22px;background:#f8fafc;display:flex;gap:20px;flex-wrap:wrap">
+                <div style="flex:1;min-width:200px">
+                    <label style="font-size:0.75rem;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em">Exam Name</label>
+                    <input type="text" id="editExamName"
+                           class="editable-field"
+                           style="font-size:1rem;font-weight:600;color:#1a3c5e"
+                           value="{{ exam_info.exam_name if exam_info else '' }}"
+                           placeholder="Enter exam name…">
+                </div>
+                <div style="flex:1;min-width:200px">
+                    <label style="font-size:0.75rem;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em">Exam Date</label>
+                    <div style="font-size:1rem;font-weight:500;color:#374151;padding:4px 0">
+                        {{ exam_info.exam_date if exam_info else '—' }}
+                    </div>
+                </div>
+                <div style="flex:1;min-width:180px">
+                    <label style="font-size:0.75rem;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em">Start Time</label>
+                    <input type="time" id="editStartTime"
+                           class="editable-field"
+                           style="font-size:0.95rem;font-weight:600;color:#1e40af"
+                           value="{{ exam_info.exam_start_time if exam_info and exam_info.exam_start_time else '' }}"
+                           placeholder="HH:MM">
+                </div>
+                <div style="flex:1;min-width:180px">
+                    <label style="font-size:0.75rem;text-transform:uppercase;color:#9ca3af;letter-spacing:.05em">End Time</label>
+                    <input type="time" id="editEndTime"
+                           class="editable-field"
+                           style="font-size:0.95rem;font-weight:600;color:#b45309"
+                           value="{{ exam_info.exam_end_time if exam_info and exam_info.exam_end_time else '' }}"
+                           placeholder="HH:MM">
+                </div>
+            </div>
+        </div>
+
+        <!-- Per-hall sections (drag & drop enabled) -->
+        <div id="seatingContainer">
+        {% for hall in halls %}
+        <div class="hall-section" id="hall-section-{{ hall.hall_number }}"
+             data-hall-number="{{ hall.hall_number }}">
+
+            <div class="hall-header">
+                <div style="flex:1">
+                    <div style="font-size:0.72rem;opacity:0.7;text-transform:uppercase;letter-spacing:.05em">
+                        Hall {{ hall.hall_number }} — Hall Name
+                    </div>
+                    <input type="text"
+                           class="editable-field hall-title-input hall-name-input"
+                           data-hall="{{ hall.hall_number }}"
+                           value="{{ hall.hall_name if hall.hall_name else 'Hall ' ~ hall.hall_number }}"
+                           placeholder="Enter hall name…">
+                </div>
+                <div style="text-align:right;font-size:0.82rem;opacity:0.85">
+                    {{ hall.total_students }} students<br>
+                    {{ hall.benches|length }} rows
+                </div>
+            </div>
+
+            <div class="seat-grid" id="sortable-{{ hall.hall_number }}">
+            {% for bench in hall.benches %}
+            <div class="bench-row"
+                 data-hall="{{ hall.hall_number }}"
+                 data-row="{{ loop.index }}">
+                <span class="drag-handle">⠿</span>
+                <span class="row-num">R{{ loop.index }}</span>
+                {% for seat in bench %}
+                    {% if seat %}
+                    <div class="seat-cell occupied">
+                        <div><strong>{{ seat.register_number or seat.roll_no }}</strong></div>
+                        <div class="seat-dept dept-{{ seat.department }}">{{ seat.department }}</div>
+                    </div>
+                    {% else %}
+                    <div class="seat-cell empty">empty</div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endfor %}
+            </div>
+
+        </div>
+        {% endfor %}
+        </div><!-- /#seatingContainer -->
+
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-msg" id="toastMsg"></div>
+
+<script>
+// -------------------------------------------------------
+// Pass halls data to JS for filter & save operations
+// -------------------------------------------------------
+const hallsData = {{ halls | tojson }};
+const examInfo  = {{ exam_info | tojson if exam_info else '{}' }};
+
+// -------------------------------------------------------
+// Feature 7: Initialize SortableJS drag & drop per hall
+// -------------------------------------------------------
+hallsData.forEach(hall => {
+    const container = document.getElementById(`sortable-${hall.hall_number}`);
+    if (container) {
+        Sortable.create(container, {
+            animation: 150,
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd() {
+                showToast('Row reordered. Click Save to persist.');
+            }
+        });
+    }
+});
+
+// -------------------------------------------------------
+// Save all edits back to server
+// -------------------------------------------------------
+function saveAllEdits() {
+    const examName     = document.getElementById('editExamName').value.trim();
+    const startTime    = (document.getElementById('editStartTime') || {}).value || '';
+    const endTime      = (document.getElementById('editEndTime') || {}).value || '';
+
+    // Collect hall name changes
+    const hallNames = {};
+    document.querySelectorAll('.hall-name-input').forEach(input => {
+        hallNames[input.dataset.hall] = input.value.trim();
+    });
+
+    fetch('/admin/save_edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            exam_name: examName,
+            exam_start_time: startTime,
+            exam_end_time: endTime,
+            hall_names: hallNames
+        })
+    })
+    .then(r => r.json())
+    .then(d => {
+        showToast(d.success ? '✓ ' + d.message : '✗ ' + d.message, d.success);
+    })
+    .catch(() => showToast('Network error. Please try again.', false));
+}
+
+// -------------------------------------------------------
+// Feature 5: Download seating view as image (html2canvas)
+// -------------------------------------------------------
+function downloadAsImage() {
+    showToast('Generating image…');
+    const target = document.getElementById('seatingContainer');
+    html2canvas(target, {
+        backgroundColor: '#f8fafc',
+        scale: 2,
+        useCORS: true,
+        logging: false
+    }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = 'seating_arrangement.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showToast('✓ Image downloaded!');
+    }).catch(() => showToast('Image export failed.', false));
+}
+
+// -------------------------------------------------------
+// Feature 6: Filter system
+// -------------------------------------------------------
+function toggleFilters() {
+    const bar = document.getElementById('filterBar');
+    bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
+    if (bar.style.display === 'block') populateFilterDropdowns();
+}
+
+function populateFilterDropdowns() {
+    fetch('/api/filter')
+    .then(r => r.json())
+    .then(d => {
+        const deptSel = document.getElementById('filterDept');
+        const hallSel = document.getElementById('filterHall');
+        deptSel.innerHTML = '<option value="">All Departments</option>';
+        hallSel.innerHTML = '<option value="">All Halls</option>';
+        d.filters.departments.forEach(dep =>
+            deptSel.insertAdjacentHTML('beforeend', `<option value="${dep}">${dep}</option>`)
+        );
+        d.filters.halls.forEach(h =>
+            hallSel.insertAdjacentHTML('beforeend', `<option value="${h}">Hall ${h}</option>`)
+        );
+    });
+}
+
+function applyFilter() {
+    const dept   = document.getElementById('filterDept').value;
+    const hall   = document.getElementById('filterHall').value;
+    const reg    = document.getElementById('filterReg').value.trim();
+
+    let url = '/api/filter?';
+    if (dept) url += `department=${encodeURIComponent(dept)}&`;
+    if (hall) url += `hall=${encodeURIComponent(hall)}&`;
+    if (reg)  url += `reg=${encodeURIComponent(reg)}&`;
+
+    fetch(url)
+    .then(r => r.json())
+    .then(d => {
+        const tbody = document.getElementById('filterTableBody');
+        document.getElementById('filterCount').textContent = d.total;
+        tbody.innerHTML = '';
+        if (d.total === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">No students found.</td></tr>`;
+        } else {
+            d.results.forEach(s => {
+                tbody.insertAdjacentHTML('beforeend', `
+                <tr>
+                    <td><strong>${s.register_number}</strong></td>
+                    <td><span class="badge-dept">${s.department}</span></td>
+                    <td>${s.hall_name}</td>
+                    <td>${s.seat_label}</td>
+                    <td>
+                        <a href="/student/${s.register_number}" target="_blank"
+                           class="btn btn-xs btn-outline-primary btn-sm" style="font-size:0.75rem">
+                            View
+                        </a>
+                    </td>
+                </tr>`);
+            });
+        }
+        document.getElementById('filterResults').style.display = 'block';
+    });
+}
+
+function clearFilter() {
+    document.getElementById('filterResults').style.display = 'none';
+    document.getElementById('filterDept').value = '';
+    document.getElementById('filterHall').value = '';
+    document.getElementById('filterReg').value  = '';
+}
+
+// -------------------------------------------------------
+// Toast helper
+// -------------------------------------------------------
+function showToast(msg, success = true) {
+    const el = document.getElementById('toastMsg');
+    el.textContent = msg;
+    el.style.background = success ? '#1a3c5e' : '#dc2626';
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+
+</body>
+</html>
