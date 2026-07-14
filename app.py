@@ -29,7 +29,7 @@ from roll_parser import parse_manual_rolls, generate_start_end, remove_missing_r
 app = Flask(__name__)
 app.config.from_object(Config)
 
-for folder in [Config.UPLOAD_FOLDER, Config.PDF_FOLDER, Config.LOGO_FOLDER]:
+for folder in [Config.UPLOAD_FOLDER, Config.PDF_FOLDER]:
     os.makedirs(folder, exist_ok=True)
 
 

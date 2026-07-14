@@ -128,6 +128,7 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
 
     hall_num  = hall_data['hall_number']
     hall_name = hall_data.get('hall_name', f'Hall {hall_num}')
+    invigilator = hall_data.get('invigilator', '').strip()
 
     # ── v8 Enhanced Header Block ──
     exam_name       = exam_info.get('exam_name', 'Examination') or 'Examination'
@@ -155,6 +156,8 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
         styles['info']
     ),
 ]
+    if invigilator:
+        header_left_items.append(Paragraph(f"<b>Invigilator:</b> {invigilator}", styles['info']))
     if exam_date or exam_start_time:
         parts = []
         if exam_date:       parts.append(f"Date: <b>{exam_date}</b>")
@@ -168,8 +171,11 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
     story.append(HRFlowable(width='100%', thickness=2, color=ACCENT_COLOR, spaceAfter=4))
 
     # ── Coloured Hall Banner ──
+    hall_banner_text = f"HALL {hall_num}  –  {hall_name}  |  {exam_name}"
+    if invigilator:
+        hall_banner_text += f"  |  Invigilator: {invigilator}"
     hall_banner = Table(
-        [[Paragraph(f"HALL {hall_num}  –  {hall_name}  |  {exam_name}", styles['hall'])]],
+        [[Paragraph(hall_banner_text, styles['hall'])]],
         colWidths=['100%'])
     hall_banner.setStyle(TableStyle([
         ('BACKGROUND',    (0, 0), (-1, -1), PRIMARY_COLOR),

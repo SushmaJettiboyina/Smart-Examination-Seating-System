@@ -175,10 +175,10 @@
 
                     <div class="row g-3 mb-3">
                         <div class="col-4">
-                            <label class="form-label">No. of Halls</label>
+                            <label class="form-label">No. of Rooms / Halls</label>
                             <input type="number" class="form-control" name="num_halls"
-                                   id="numHalls" min="1" max="20" value="3" required
-                                   oninput="rebuildHallTable()">
+                                   id="numHalls" min="1" max="100" value="3" required
+                                   oninput="clearRoomNames(); rebuildHallTable()">
                         </div>
                         <div class="col-4">
                             <label class="form-label">Default Rows</label>
@@ -192,6 +192,16 @@
                                    id="defaultCols" min="1" max="20" value="6"
                                    oninput="applyDefaultsToAll()">
                         </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Room / Hall Names</label>
+                        <textarea class="form-control" name="room_names_input" id="roomNamesInput"
+                                  rows="4" placeholder="Paste one room name per line, e.g. A-202, A-203, B-103"
+                                  oninput="updateRoomNamesFromList()"
+                                  onblur="updateRoomNamesFromList()"
+                                  onpaste="setTimeout(updateRoomNamesFromList, 0)"></textarea>
+                        <div class="form-text">Enter each room on its own line and the hall count will update automatically.</div>
                     </div>
 
                     <div class="d-flex align-items-center justify-content-between mb-2">
@@ -298,6 +308,8 @@
 const STUDENT_COUNT = {{ student_count }};
 
 /* Build the per-hall rows/cols/name input table */
+let roomNames = [];
+
 function rebuildHallTable() {
     const numHalls   = parseInt(document.getElementById('numHalls').value) || 1;
     const defRows    = parseInt(document.getElementById('defaultRows').value) || 5;
@@ -305,15 +317,16 @@ function rebuildHallTable() {
     const container  = document.getElementById('hallLayoutContainer');
 
     let html = '<table class="hall-layout-table"><thead><tr>' +
-        '<th>#</th><th style="min-width:130px">Hall Name</th><th>Rows</th><th></th><th>Cols</th><th>Capacity</th>' +
+        '<th>#</th><th style="min-width:130px">Room / Hall Name</th><th>Rows</th><th></th><th>Cols</th><th>Capacity</th>' +
         '</tr></thead><tbody>';
 
     for (let i = 1; i <= numHalls; i++) {
+        const roomName = roomNames[i - 1] || '';
         html += `<tr class="hall-row" id="hall-row-${i}">
             <td><span class="hall-num-badge">${i}</span></td>
             <td><input type="text" class="hall-name-input" name="hall_name_${i}"
-                       id="hall_name_${i}" placeholder="Hall ${i}" maxlength="40"
-                       oninput="syncDragCard(${i})"></td>
+                       id="hall_name_${i}" placeholder="e.g. A-202" maxlength="40"
+                       value="${roomName}" oninput="syncDragCard(${i})"></td>
             <td><input type="number" class="layout-input" name="hall_rows_${i}"
                        id="hall_rows_${i}" min="1" max="50" value="${defRows}"
                        oninput="updateRowCapacity(${i})"></td>
@@ -425,6 +438,24 @@ function syncDragCard(i) {
     const metaEl = document.getElementById(`dcard-meta-${i}`);
     if (nameEl) nameEl.textContent = getHallDisplayName(i);
     if (metaEl) metaEl.textContent = `${getHallCapacity(i)} seats`;
+}
+
+function updateRoomNamesFromList() {
+    const raw = document.getElementById('roomNamesInput').value || '';
+    const lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (lines.length) {
+        roomNames = lines;
+        const numHalls = Math.min(Math.max(lines.length, 1), 100);
+        const numHallsInput = document.getElementById('numHalls');
+        if (numHallsInput) {
+            numHallsInput.value = numHalls;
+        }
+        rebuildHallTable();
+    }
+}
+
+function clearRoomNames() {
+    roomNames = [];
 }
 
 function onDragEnd(evt) {
