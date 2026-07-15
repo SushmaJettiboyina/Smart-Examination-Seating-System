@@ -1,6 +1,5 @@
 # pdf_generator.py - ReportLab PDF Generator  v5
 # v5 CHANGES:
-#   - Clickable link paragraph placed BELOW each QR code (vertically stacked in cell)
 #   - PDF header shows: College Name, Exam Name (Paper Name), Hall Name, Exam Date, Start Time, End Time
 #   - All roll_no references replaced with register_number
 

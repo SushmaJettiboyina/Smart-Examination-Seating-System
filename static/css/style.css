@@ -12,15 +12,15 @@
   --accent-light: #fef3dc;
   --sidebar-w:    240px;
   --topbar-h:     64px;
-  --bg:           #f4f6fb;
+  --bg:           #F8FAFC;
   --card-bg:      #ffffff;
   --border:       #e2e8f0;
   --text:         #1e293b;
   --text-muted:   #64748b;
   --success:      #22c55e;
   --danger:       #ef4444;
-  --radius:       12px;
-  --shadow:       0 2px 12px rgba(26,60,94,.08);
+  --radius:       18px;
+  --shadow: 0 10px 30px rgba(15,23,42,.08);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -139,6 +139,20 @@ body {
   border-radius: 4px;
   color: var(--primary);
 }
+.form-card,
+.stat-card,
+.action-card,
+.info-card{
+    transition: all .3s ease;
+}
+
+.form-card:hover,
+.stat-card:hover,
+.action-card:hover,
+.info-card:hover{
+    transform: translateY(-5px);
+    box-shadow: 0 18px 40px rgba(15,23,42,.12);
+}
 
 /* ============================================================
    APP LAYOUT
@@ -156,6 +170,8 @@ body {
   top: 0; left: 0;
   z-index: 100;
   transition: width .25s;
+  box-shadow: 5px 0 30px rgba(0,0,0,.12);
+  background:linear-gradient(180deg,#183B63,#0F2744);
 }
 
 .sidebar-brand {
@@ -201,11 +217,14 @@ body {
   color: #fff;
 }
 
-.sidebar-nav .nav-link.active {
-  background: rgba(232,160,32,.15);
-  color: var(--accent);
-  border-left-color: var(--accent);
-  font-weight: 600;
+
+.sidebar-nav .nav-link.active{
+    background:white;
+    color:#2563EB;
+    border-radius:12px;
+    margin:0 12px;
+    border-left:none;
+    font-weight:700;
 }
 
 .sidebar-footer {
@@ -241,6 +260,8 @@ body {
   top: 0;
   z-index: 50;
   box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  backdrop-filter:blur(18px);
+  background:rgba(255,255,255,.85);
 }
 
 .topbar-title h4 {
@@ -270,12 +291,13 @@ body {
    ============================================================ */
 .welcome-banner {
   background: linear-gradient(135deg, var(--primary) 0%, #2a6da8 100%);
-  border-radius: var(--radius);
-  padding: 1.5rem 2rem;
+  border-radius:28px;
+  padding: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   color: #fff;
+  padding:40px;
 }
 
 .welcome-banner h2 {
@@ -301,8 +323,8 @@ body {
 }
 
 .stat-icon {
-  width: 52px; height: 52px;
-  border-radius: 12px;
+  width: 64px; height: 64px;
+  border-radius: 16px;
   display: flex; align-items: center; justify-content: center;
   font-size: 1.3rem;
   flex-shrink: 0;
@@ -315,7 +337,7 @@ body {
 
 .stat-info h3 {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 1.7rem;
+  font-size: 2.2rem;
   font-weight: 700;
   line-height: 1;
   color: var(--text);
@@ -425,11 +447,14 @@ body {
 /* Drop Zone */
 .drop-zone {
   border: 2px dashed var(--border);
-  border-radius: var(--radius);
+  border-radius:24px;
   padding: 2.5rem 1.5rem;
   text-align: center;
   cursor: pointer;
   transition: border-color .2s, background .2s;
+  min-height:280px;
+
+
 }
 
 .drop-zone:hover, .drop-zone.drag-over {
@@ -449,13 +474,18 @@ body {
   font-weight: 500;
 }
 
-.btn-upload, .btn-generate {
-  background: linear-gradient(135deg, var(--primary), #2a6da8);
-  border: none;
-  border-radius: 10px;
-  padding: .75rem 1.5rem;
-  font-weight: 600;
-  transition: transform .15s, box-shadow .15s;
+
+.btn-upload,
+.btn-generate{
+    border-radius:14px;
+    height:64px;
+    font-size:15px;
+    transition:.3s;
+}
+
+.btn-upload:hover,
+.btn-generate:hover{
+    transform:translateY(-3px);
 }
 
 .btn-upload:hover, .btn-generate:hover {
@@ -646,6 +676,17 @@ body {
   padding: .4rem .5rem;
   text-align: center;
   min-width: 72px;
+}
+.form-control,
+.form-select,
+.roll-input-sm,
+.roll-textarea{
+
+    border-radius:12px;
+
+    padding:14px;
+
+    transition:.3s;
 }
 
 .seat-roll { font-weight: 700; font-size: .82rem; line-height: 1.2; }

@@ -18,7 +18,13 @@ from werkzeug.utils import secure_filename
 
 from config import Config
 from auth import login_required, check_credentials, login_user, logout_user
-from excel_loader import load_students_from_excel, validate_excel_format, get_department_summary
+from excel_loader import (
+    load_students_from_excel,
+    validate_excel_format,
+    validate_faculty_excel_format,
+    load_faculty_from_excel,
+    get_department_summary,
+)
 from seating_algorithm import (generate_multiple_hall_distribution, get_seating_stats,
                                 validate_hall_layouts)
 from pdf_generator import generate_all_pdfs
@@ -91,7 +97,7 @@ def build_student_lookup(halls, exam_info=None):
     return lookup
 
 
-def assign_invigilators(halls, rotation_seed=None, force=False):
+def assign_invigilators(halls, faculty_data=None, rotation_seed=None, force=False):
     """
     Ensure each hall dict has an 'invigilator' key.
 
@@ -114,10 +120,48 @@ def assign_invigilators(halls, rotation_seed=None, force=False):
     # Work on a shallow copy so callers can call this repeatedly with
     # different seeds without mutating the original list in-place.
     new_halls = [dict(h) for h in halls]
+    faculty_rows = faculty_data or []
+
+    def normalize_value(value):
+        if value is None:
+            return ''
+        return str(value).strip().lower()
+
+    mapped_by_number = {}
+    mapped_by_name = {}
+    generic_faculty = []
+    for row in faculty_rows:
+        invigilator = str(row.get('invigilator', '')).strip()
+        if not invigilator:
+            continue
+        hall_number = normalize_value(row.get('hall_number'))
+        hall_name = normalize_value(row.get('hall_name'))
+        if hall_number:
+            mapped_by_number[hall_number] = invigilator
+        elif hall_name:
+            mapped_by_name[hall_name] = invigilator
+        else:
+            generic_faculty.append(invigilator)
     for idx, hall in enumerate(new_halls):
         existing = str(hall.get('invigilator', '')).strip()
         if existing and not force:
             continue
+
+        hall_number_norm = normalize_value(hall.get('hall_number'))
+        hall_name_norm = normalize_value(hall.get('hall_name'))
+
+        invigilator = None
+        if hall_number_norm and hall_number_norm in mapped_by_number:
+            invigilator = mapped_by_number[hall_number_norm]
+        elif hall_name_norm and hall_name_norm in mapped_by_name:
+            invigilator = mapped_by_name[hall_name_norm]
+        elif generic_faculty:
+            invigilator = generic_faculty.pop(0)
+
+        if invigilator:
+            hall['invigilator'] = invigilator
+            continue
+
         pick = pool[(idx + seed) % len(pool)]
         hall['invigilator'] = pick
 
@@ -206,11 +250,116 @@ def upload():
         save_session_data('students',     students)
         save_session_data('dept_summary', get_department_summary(students))
         session['excel_filename'] = filename
+        session.pop('faculty_filename', None)
+        session.pop('faculty_data', None)
 
         flash(f'✓ {message}', 'success')
         return redirect(url_for('generate'))
 
     return render_template('upload.html')
+
+
+@app.route('/upload-faculty', methods=['POST'])
+@login_required
+def upload_faculty():
+    if 'faculty_file' not in request.files:
+        flash('No faculty file selected.', 'danger')
+        return redirect(url_for('upload'))
+
+    file = request.files['faculty_file']
+    if not file.filename:
+        flash('No faculty file selected.', 'danger')
+        return redirect(url_for('upload'))
+    if not allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
+        flash('Invalid file type. Please upload .xlsx or .xls.', 'danger')
+        return redirect(url_for('upload'))
+
+    filename = secure_filename(f"faculty_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+    filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
+    file.save(filepath)
+
+    is_valid, message = validate_faculty_excel_format(filepath)
+    if not is_valid:
+        os.remove(filepath)
+        flash(f'Validation failed: {message}', 'danger')
+        return redirect(url_for('upload'))
+
+    faculty, error = load_faculty_from_excel(filepath)
+    if error:
+        flash(f'Error loading faculty: {error}', 'danger')
+        return redirect(url_for('upload'))
+
+    save_session_data('faculty_data', faculty)
+    session['faculty_filename'] = filename
+
+    flash(f'✓ {message}', 'success')
+    return redirect(url_for('generate'))
+
+
+@app.route('/generate-manual-faculty', methods=['POST'])
+@login_required
+def generate_manual_faculty():
+    manual_input = request.form.get('manual_faculty', '').strip()
+    if not manual_input:
+        flash('Please enter at least one faculty entry.', 'danger')
+        return redirect(url_for('upload'))
+
+    import re
+    tokens = re.split(r'[\r\n,]+', manual_input)
+    faculty = []
+    for t in tokens:
+        s = t.strip()
+        if not s:
+            continue
+        # support 'hall:invigilator' or 'hall|invigilator' or 'hall->invigilator'
+        parts = re.split(r'\s*(?:\||:|->)\s*', s, maxsplit=1)
+        if len(parts) == 2:
+            left, right = parts[0].strip(), parts[1].strip()
+            hall_number = None
+            hall_name = None
+            if left.isdigit():
+                hall_number = int(left)
+            else:
+                hall_name = left
+            faculty.append({'hall_number': hall_number, 'hall_name': hall_name, 'invigilator': right})
+        else:
+            faculty.append({'hall_number': None, 'hall_name': None, 'invigilator': s})
+
+    if not faculty:
+        flash('No valid faculty entries found.', 'danger')
+        return redirect(url_for('upload'))
+
+    save_session_data('faculty_data', faculty)
+    session['faculty_manual_input'] = manual_input
+    session.pop('faculty_filename', None)
+
+    flash(f'✓ {len(faculty)} faculty entries loaded from manual input.', 'success')
+    return redirect(url_for('generate'))
+
+
+@app.route('/generate-faculty', methods=['POST'])
+@login_required
+def generate_faculty():
+    try:
+        count = int(request.form.get('faculty_count', 0))
+    except Exception:
+        count = 0
+    prefix = request.form.get('faculty_prefix', 'Faculty').strip()
+
+    if count <= 0:
+        flash('Please enter a positive number of faculty to generate.', 'danger')
+        return redirect(url_for('upload'))
+
+    faculty = []
+    for i in range(1, count + 1):
+        faculty.append({'hall_number': None, 'hall_name': None, 'invigilator': f"{prefix} {i}"})
+
+    save_session_data('faculty_data', faculty)
+    session['faculty_generated'] = {'count': count, 'prefix': prefix}
+    session.pop('faculty_filename', None)
+
+    flash(f'✓ Generated {count} faculty entries with prefix "{prefix}".', 'success')
+    return redirect(url_for('generate'))
 
 
 # ---------------------------------------------------------------------------
@@ -393,10 +542,14 @@ def generate():
                 h['hall_name'] = f"Hall {h['hall_number']}"
 
         # Ensure every hall has an assigned invigilator (faculty)
+        faculty_data = load_session_data('faculty_data') or []
         try:
-            halls = assign_invigilators(halls)
+            if faculty_data:
+                halls = assign_invigilators(halls, faculty_data=faculty_data)
+            else:
+                halls = assign_invigilators(halls)
         except Exception:
-            pass
+            halls = assign_invigilators(halls)
 
         stats     = get_seating_stats(halls)
         pdf_files = generate_all_pdfs(halls, exam_info, Config.PDF_FOLDER)

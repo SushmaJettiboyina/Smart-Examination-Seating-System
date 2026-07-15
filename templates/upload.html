@@ -152,6 +152,7 @@
                                 <i class="fas fa-upload me-2"></i>Upload &amp; Validate
                             </button>
                         </form>
+                        
                     </div>
 
                     <!-- PANEL 2: Roll Range -->
@@ -270,9 +271,24 @@
                             </button>
                         </form>
                     </div>
-
+                    <hr class="my-4">
+                        <h5 class="form-card-title mb-3"><i class="fas fa-chalkboard-teacher me-2"></i>Upload Faculty / Invigilator Data</h5>
+                        <form method="POST" action="{{ url_for('upload_faculty') }}" enctype="multipart/form-data">
+                            <div class="drop-zone" id="dropZoneFaculty" onclick="document.getElementById('facultyFile').click()">
+                                <div class="drop-zone-icon"><i class="fas fa-file-upload"></i></div>
+                                <div class="drop-zone-text"><strong>Click to upload</strong> or drag &amp; drop</div>
+                                <div class="drop-zone-hint">Supported: .xlsx, .xls (max 16 MB)</div>
+                                <div class="drop-zone-filename" id="selectedFacultyFileName">No file selected</div>
+                            </div>
+                            <input type="file" id="facultyFile" name="faculty_file" accept=".xlsx,.xls" class="d-none" onchange="updateFacultyFileName(this)">
+                            <button type="submit" class="btn btn-secondary w-100 mt-3 btn-upload">
+                                <i class="fas fa-upload me-2"></i>Upload Faculty File
+                            </button>
+                        </form>
+</div>
                 </div>
             </div>
+            
 
             <!-- RIGHT: Info panels -->
             <div class="col-lg-5">
@@ -376,6 +392,10 @@ function switchMethod(method) {
 function updateFileName(input) {
     document.getElementById('selectedFileName').textContent = input.files[0]?.name || 'No file selected';
     if (input.files[0]) document.getElementById('dropZone').classList.add('has-file');
+}
+function updateFacultyFileName(input) {
+    document.getElementById('selectedFacultyFileName').textContent = input.files[0]?.name || 'No file selected';
+    if (input.files[0]) document.getElementById('dropZoneFaculty').classList.add('has-file');
 }
 const dz = document.getElementById('dropZone');
 ['dragenter','dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('drag-over'); }));
