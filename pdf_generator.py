@@ -1,9 +1,7 @@
 # pdf_generator.py - ReportLab PDF Generator  v5
 # v5 CHANGES:
-#   - QR code contains ONLY the URL: http://127.0.0.1:5000/student/<register_number>
 #   - Clickable link paragraph placed BELOW each QR code (vertically stacked in cell)
 #   - PDF header shows: College Name, Exam Name (Paper Name), Hall Name, Exam Date, Start Time, End Time
-#   - Per-student QR (one per student row, not one per bench)
 #   - All roll_no references replaced with register_number
 
 import os
@@ -15,9 +13,6 @@ from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.colors import HexColor
-from reportlab.graphics.barcode.qr import QrCodeWidget
-from reportlab.graphics.shapes import Drawing
-from reportlab.graphics import renderPDF
 from reportlab.platypus import Flowable
 import io
 
@@ -29,24 +24,6 @@ ALT_ROW_BG    = HexColor('#f0f4f8')
 WHITE         = colors.white
 LIGHT_GRAY    = HexColor('#e2e8f0')
 LINK_COLOR    = HexColor('#2563eb')
-
-DEFAULT_BASE_URL = 'http://127.0.0.1:5000'
-
-
-# ---------------------------------------------------------------------------
-# QR Code helper — renders ONLY the URL
-# ---------------------------------------------------------------------------
-
-def _make_qr_drawing(url, size_px=52):
-    """Generate a QR code Drawing containing only the URL string."""
-    qr = QrCodeWidget(url)
-    b  = qr.getBounds()
-    w  = b[2] - b[0]
-    h  = b[3] - b[1]
-    scale = size_px / max(w, h)
-    d = Drawing(size_px, size_px, transform=[scale, 0, 0, scale, 0, 0])
-    d.add(qr)
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +89,6 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
     """
     Generate a single hall seating PDF (v5).
     Header: College Name, Paper Name (Exam Name), Hall Name, Date, Start Time, End Time.
-    Each student row: QR code (URL only) + clickable link below, stacked vertically.
     """
     doc = SimpleDocTemplate(
         output_path, pagesize=A4,
@@ -122,7 +98,6 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
     styles = _build_styles()
     story  = []
 
-    base_url = exam_info.get('base_url', DEFAULT_BASE_URL).rstrip('/')
 
     # ---- Header ----
 
@@ -201,13 +176,11 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
                        exam_info.get('seats_per_bench', 3))
 
     # Header row
-    header     = ['Row'] + [f'Seat {i+1}' for i in range(seats_per_bench)] + ['QR / Link']
+    header = ['Row'] + [f'Seat {i+1}' for i in range(seats_per_bench)]
     table_data = [header]
 
     for bench_idx, bench in enumerate(benches, start=1):
         row = [str(bench_idx)]
-
-        # First student in row → gets QR
         first_reg = None
 
         for seat in bench:
@@ -229,37 +202,15 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
         # Pad short rows
         while len(row) < seats_per_bench + 1:
             row.append('—')
-
-        # QR cell: QR image stacked above clickable link text
-        if first_reg:
-            qr_url  = f"{base_url}/student/{first_reg}"
-            qr_img  = _make_qr_drawing(qr_url, size_px=48)
-            link_p  = Paragraph(
-                f'<link href="{qr_url}"><font color="#2563eb" size="6">'
-                f'{qr_url}</font></link>',
-                styles['link'])
-            # Stack: QR drawing then link paragraph in a nested mini-table
-            qr_cell = Table(
-                [[qr_img], [link_p]],
-                colWidths=[2*cm])
-            qr_cell.setStyle(TableStyle([
-                ('ALIGN',     (0, 0), (-1, -1), 'CENTER'),
-                ('VALIGN',    (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ]))
-            row.append(qr_cell)
-        else:
-            row.append('—')
-
         table_data.append(row)
 
     # Column widths
     available_width = A4[0] - 3*cm
-    row_col_width   = 1.0*cm
-    qr_col_width    = 2.2*cm
-    seat_col_width  = (available_width - row_col_width - qr_col_width) / seats_per_bench
-    col_widths      = [row_col_width] + [seat_col_width] * seats_per_bench + [qr_col_width]
+    row_col_width = 1.0*cm
+
+    seat_col_width = (available_width - row_col_width) / seats_per_bench
+
+    col_widths = [row_col_width] + [seat_col_width] * seats_per_bench
 
     seating_table = Table(table_data, colWidths=col_widths, repeatRows=1)
 
@@ -285,17 +236,12 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
 
     for row_idx in range(1, len(table_data)):
         if row_idx % 2 == 0:
-            table_style.add('BACKGROUND', (1, row_idx), (-2, row_idx), ALT_ROW_BG)
+            table_style.add('BACKGROUND', (1, row_idx), (-1, row_idx), ALT_ROW_BG)
 
     seating_table.setStyle(table_style)
     story.append(seating_table)
     story.append(Spacer(1, 0.5*cm))
 
-    story.append(Paragraph(
-        'QR Code: Students can scan to view their seat details instantly. '
-        'Clickable link is shown below each QR code.',
-        styles['footer']))
-    story.append(Spacer(1, 0.5*cm))
 
     # ---- Footer ----
     footer_text = (

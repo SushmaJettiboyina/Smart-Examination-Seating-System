@@ -91,6 +91,39 @@ def build_student_lookup(halls, exam_info=None):
     return lookup
 
 
+def assign_invigilators(halls, rotation_seed=None, force=False):
+    """
+    Ensure each hall dict has an 'invigilator' key.
+
+    - If a hall already has an invigilator and `force` is False, leave it alone.
+    - Otherwise pick from a small deterministic faculty pool using
+      `(hall_index + rotation_seed) % len(pool)` so tests can vary the
+      assignment by changing `rotation_seed`.
+
+    Returns the updated halls list (modified in-place).
+    """
+    if not halls:
+        return halls
+
+    pool = [
+        'Faculty A', 'Faculty B', 'Faculty C', 'Faculty D', 'Faculty E',
+        'Faculty F', 'Faculty G', 'Faculty H', 'Faculty I', 'Faculty J'
+    ]
+    seed = int(rotation_seed) if rotation_seed is not None else 0
+
+    # Work on a shallow copy so callers can call this repeatedly with
+    # different seeds without mutating the original list in-place.
+    new_halls = [dict(h) for h in halls]
+    for idx, hall in enumerate(new_halls):
+        existing = str(hall.get('invigilator', '')).strip()
+        if existing and not force:
+            continue
+        pick = pool[(idx + seed) % len(pool)]
+        hall['invigilator'] = pick
+
+    return new_halls
+
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -358,6 +391,12 @@ def generate():
                 h['hall_name'] = layout_name
             elif 'hall_name' not in h:
                 h['hall_name'] = f"Hall {h['hall_number']}"
+
+        # Ensure every hall has an assigned invigilator (faculty)
+        try:
+            halls = assign_invigilators(halls)
+        except Exception:
+            pass
 
         stats     = get_seating_stats(halls)
         pdf_files = generate_all_pdfs(halls, exam_info, Config.PDF_FOLDER)
