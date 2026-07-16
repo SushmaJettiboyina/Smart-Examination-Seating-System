@@ -97,6 +97,24 @@ def build_student_lookup(halls, exam_info=None):
     return lookup
 
 
+def log_activity(activity_type, text):
+    """
+    Log activity to Flask session. Keep only the last 5.
+    """
+    try:
+        activities = load_session_data('activities') or []
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        activity = {
+            'type': activity_type,
+            'text': text,
+            'time': now_str
+        }
+        activities.insert(0, activity)
+        save_session_data('activities', activities[:5])
+    except Exception as e:
+        app.logger.error(f'log_activity error: {e}')
+
+
 def assign_invigilators(halls, faculty_data=None, rotation_seed=None, force=False):
     """
     Ensure each hall dict has an 'invigilator' key.
@@ -206,11 +224,13 @@ def dashboard():
     halls     = load_session_data('halls')
     stats     = load_session_data('stats')
     exam_info = load_session_data('exam_info')
+    activities = load_session_data('activities') or []
     return render_template('dashboard.html',
                            student_count=len(students) if students else 0,
                            halls_generated=len(halls) if halls else 0,
                            exam_info=exam_info,
-                           stats=stats)
+                           stats=stats,
+                           activities=activities)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +273,7 @@ def upload():
         session.pop('faculty_filename', None)
         session.pop('faculty_data', None)
 
+        log_activity('upload_students', f"Uploaded student data: {len(students)} students loaded from Excel ({filename}).")
         flash(f'✓ {message}', 'success')
         return redirect(url_for('generate'))
 
@@ -292,6 +313,7 @@ def upload_faculty():
     save_session_data('faculty_data', faculty)
     session['faculty_filename'] = filename
 
+    log_activity('upload_faculty', f"Uploaded faculty data: {len(faculty)} invigilators loaded from Excel ({filename}).")
     flash(f'✓ {message}', 'success')
     return redirect(url_for('generate'))
 
@@ -333,6 +355,7 @@ def generate_manual_faculty():
     session['faculty_manual_input'] = manual_input
     session.pop('faculty_filename', None)
 
+    log_activity('upload_faculty', f"Loaded faculty data: {len(faculty)} invigilators from manual input.")
     flash(f'✓ {len(faculty)} faculty entries loaded from manual input.', 'success')
     return redirect(url_for('generate'))
 
@@ -358,6 +381,7 @@ def generate_faculty():
     session['faculty_generated'] = {'count': count, 'prefix': prefix}
     session.pop('faculty_filename', None)
 
+    log_activity('upload_faculty', f"Generated faculty data: {count} invigilators auto-generated with prefix '{prefix}'.")
     flash(f'✓ Generated {count} faculty entries with prefix "{prefix}".', 'success')
     return redirect(url_for('generate'))
 
@@ -398,6 +422,7 @@ def generate_roll_range_route():
     session.pop('excel_filename', None)
     session['roll_range_input'] = roll_range_input   # store for display
 
+    log_activity('upload_students', f"Generated student data: {len(students)} students loaded from Roll Range.")
     dept_counts = get_department_summary(students)
     dept_str    = ', '.join(f"{d}: {c}" for d, c in sorted(dept_counts.items()))
     flash(
@@ -436,6 +461,7 @@ def generate_manual_rolls_route():
     save_session_data('dept_summary', get_department_summary(students))
     session.pop('excel_filename', None)
 
+    log_activity('upload_students', f"Imported student data: {len(students)} students loaded from manual entry.")
     dept_counts = get_department_summary(students)
     dept_str    = ', '.join(f"{d}: {c}" for d, c in sorted(dept_counts.items()))
     flash(f'✓ {len(students)} students loaded from manual entry. ({dept_str})', 'success')
@@ -472,6 +498,7 @@ def generate_start_end_route():
     save_session_data('dept_summary', get_department_summary(students))
     session.pop('excel_filename', None)
 
+    log_activity('upload_students', f"Generated student data: {len(students)} students loaded from Start–End range.")
     dept_counts = get_department_summary(students)
     dept_str    = ', '.join(f"{d}: {c}" for d, c in sorted(dept_counts.items()))
     flash(f'✓ {len(students)} students generated from {start_roll} → {end_roll}. ({dept_str})', 'success')
@@ -514,7 +541,8 @@ def generate():
         is_valid, msg, total_capacity = validate_hall_layouts(
             num_halls, hall_layouts, len(students))
         if not is_valid:
-            flash(f'Capacity error: {msg}', 'danger')
+            shortage = len(students) - total_capacity
+            flash(f'⚠️ Seating Generation Blocked: Insufficient Seating Capacity! Required Seats: {len(students)}, Available Seats: {total_capacity} (Shortage of {shortage} seat{"s" if shortage != 1 else ""}). Please add more halls or expand layout sizes.', 'danger')
             return redirect(request.url)
 
         exam_info = {
@@ -559,7 +587,8 @@ def generate():
         save_session_data('exam_info', exam_info)
         save_session_data('pdf_files', pdf_files)
 
-        flash(f'✓ Seating generated for {len(halls)} hall(s)!', 'success')
+        log_activity('generate_seating', f"Generated seating: {len(students)} students placed across {len(halls)} halls.")
+        flash(f'✓ Seating arrangement generated successfully! Required Seats: {len(students)}, Available Seats: {total_capacity}. Utilization Rate: {round(len(students) / total_capacity * 100, 1)}%.', 'success')
         return redirect(url_for('seating_result'))
 
     return render_template('generate.html',
@@ -603,6 +632,7 @@ def download_pdf(hall_number):
         return redirect(url_for('dashboard'))
     for pdf in pdf_files:
         if pdf['hall_number'] == hall_number and os.path.exists(pdf['path']):
+            log_activity('download_pdf', f"Downloaded PDF seating plan for Hall {hall_number}.")
             return send_file(pdf['path'], as_attachment=True,
                              download_name=pdf['filename'],
                              mimetype='application/pdf')
@@ -627,6 +657,7 @@ def download_all_pdfs():
     exam_info = load_session_data('exam_info')
     exam_name = (exam_info.get('exam_name', 'Exam').replace(' ', '_')
                  if exam_info else 'Exam')
+    log_activity('download_pdf', "Downloaded all seating plans as a ZIP archive.")
     return send_file(buf, as_attachment=True,
                      download_name=f'{exam_name}_All_Seating_Plans.zip',
                      mimetype='application/zip')
@@ -674,6 +705,7 @@ def save_seating():
             except Exception as pdf_err:
                 app.logger.warning(f'PDF regen failed: {pdf_err}')
 
+        log_activity('edit_seating', f"Edited seating layout: Rearranged seats in the preview editor (total {stats['total_students']} students).")
         return jsonify({
             'success': True,
             'message': (f'Saved. {stats["total_students"]} students '
@@ -787,6 +819,7 @@ def admin_save_edit():
             except Exception as pdf_err:
                 app.logger.warning(f'PDF regen failed after edit: {pdf_err}')
 
+        log_activity('edit_seating', "Edited seating layout: Updated exam details / hall names in the admin edit view.")
         return jsonify({'success': True, 'message': 'Changes saved successfully!'})
 
     except Exception as e:

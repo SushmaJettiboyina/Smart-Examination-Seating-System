@@ -179,13 +179,91 @@
                     </div>
                 </div>
 
-                <!-- Summary cards -->
-                <div class="hall-summary-cards">
-                    <div class="hs-card"><div class="hs-val">{{ hall.total_students }}</div><div class="hs-lbl">Students</div></div>
-                    <div class="hs-card"><div class="hs-val">{{ hall.benches|length }}</div><div class="hs-lbl">Benches</div></div>
-                    {% if hall.benches and hall.benches[0] %}
-                    <div class="hs-card"><div class="hs-val">{{ hall.benches[0]|length }}</div><div class="hs-lbl">Seats/Bench</div></div>
+                <!-- Hall-wise Seating Summary Grid (NEW FEATURE 1) -->
+                {% set depts = [] %}
+                {% for bench in hall.benches %}
+                  {% for student in bench %}
+                    {% if student and student.department and student.department not in depts %}
+                      {% set _ = depts.append(student.department) %}
                     {% endif %}
+                  {% endfor %}
+                {% endfor %}
+
+                <div class="hall-summary-grid">
+                    <!-- Hall Name -->
+                    <div class="hall-summary-card">
+                        <div class="hall-summary-icon">
+                            <i class="fas fa-door-open"></i>
+                        </div>
+                        <div class="hall-summary-info">
+                            <div class="hall-summary-label">Room / Hall</div>
+                            <div class="hall-summary-value">{{ hall.hall_name if hall.hall_name else 'Hall ' ~ hall.hall_number }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Assigned Faculty -->
+                    <div class="hall-summary-card">
+                        <div class="hall-summary-icon">
+                            <i class="fas fa-user-shield"></i>
+                        </div>
+                        <div class="hall-summary-info">
+                            <div class="hall-summary-label">Assigned Faculty</div>
+                            <div class="hall-summary-value" title="{{ hall.invigilator or 'Not Assigned' }}">{{ hall.invigilator or 'Not Assigned' }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Total Students -->
+                    <div class="hall-summary-card">
+                        <div class="hall-summary-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="hall-summary-info">
+                            <div class="hall-summary-label">Total Students</div>
+                            <div class="hall-summary-value">{{ hall.total_students }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Hall Capacity -->
+                    <div class="hall-summary-card">
+                        <div class="hall-summary-icon">
+                            <i class="fas fa-chair"></i>
+                        </div>
+                        <div class="hall-summary-info">
+                            <div class="hall-summary-label">Hall Capacity</div>
+                            <div class="hall-summary-value">{{ hall.capacity }}</div>
+                        </div>
+                    </div>
+
+                    <!-- Occupancy Percentage -->
+                    <div class="hall-summary-card">
+                        <div class="hall-summary-icon">
+                            <i class="fas fa-percentage"></i>
+                        </div>
+                        <div class="hall-summary-info">
+                            <div class="hall-summary-label">Occupancy</div>
+                            {% set occupancy = (hall.total_students / hall.capacity * 100) | round(1) if hall.capacity else 0 %}
+                            <div class="hall-summary-value {% if occupancy > 90 %}occ-high{% elif occupancy > 50 %}occ-medium{% else %}occ-low{% endif %}">
+                                {{ occupancy }}%
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Departments Present -->
+                    <div class="hall-summary-card">
+                        <div class="hall-summary-icon">
+                            <i class="fas fa-tags"></i>
+                        </div>
+                        <div class="hall-summary-info">
+                            <div class="hall-summary-label">Departments</div>
+                            <div class="hall-summary-value" style="font-size: 0.9rem;" title="{% if depts %}{{ depts | join(', ') }}{% else %}None{% endif %}">
+                                {% if depts %}
+                                    {{ depts | join(', ') }}
+                                {% else %}
+                                    None
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- ── TABLE VIEW ── -->

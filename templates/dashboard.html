@@ -10,41 +10,73 @@
 </head>
 <body class="app-body">
 
-<!-- Sidebar -->
-<div class="sidebar">
+<!-- ================= Sidebar ================= -->
+<aside class="sidebar">
+
     <div class="sidebar-brand">
-        <i class="fas fa-graduation-cap me-2"></i>
-        <span>Seating AI</span>
+        <div class="brand-icon">
+            <i class="fas fa-chair"></i>
+        </div>
+
+        <div class="brand-text">
+            <h4>Seating AI</h4>
+            <small>Examination System</small>
+        </div>
     </div>
-    <nav class="sidebar-nav">
-        <a href="{{ url_for('dashboard') }}" class="nav-link active">
-            <i class="fas fa-th-large"></i> Dashboard
-        </a>
-        <a href="{{ url_for('upload') }}" class="nav-link">
-            <i class="fas fa-upload"></i> Upload Students
-        </a>
-        <a href="{{ url_for('generate') }}" class="nav-link">
-            <i class="fas fa-cogs"></i> Generate Seating
-        </a>
-        <a href="{{ url_for('seating_result') }}" class="nav-link">
-            <i class="fas fa-table"></i> View Results
-        </a>
-        <a href="{{ url_for('seating_preview') }}" class="nav-link">
-            <i class="fas fa-arrows-alt"></i> Seat Editor
-        </a>
-    </nav>
-        <a href="/admin/edit" class="nav-link">
-            <i class="fas fa-edit"></i> Edit Seating
-        </a>
-        <a href="/student" class="nav-link">
-            <i class="fas fa-search"></i> Student Search
-        </a>
+
+    <div class="sidebar-section">
+        <span class="sidebar-heading">MAIN MENU</span>
+
+        <nav class="sidebar-nav">
+
+            <a href="{{ url_for('dashboard') }}" class="nav-link active">
+                <i class="fas fa-house"></i>
+                <span>Dashboard</span>
+            </a>
+
+            <a href="{{ url_for('upload') }}" class="nav-link">
+                <i class="fas fa-users"></i>
+                <span>Students</span>
+            </a>
+
+            <a href="{{ url_for('generate') }}" class="nav-link">
+                <i class="fas fa-chair"></i>
+                <span>Generate Seating</span>
+            </a>
+
+            <a href="{{ url_for('seating_result') }}" class="nav-link">
+                <i class="fas fa-table"></i>
+                <span>Results</span>
+            </a>
+
+            <a href="{{ url_for('seating_preview') }}" class="nav-link">
+                <i class="fas fa-pen-ruler"></i>
+                <span>Seat Editor</span>
+            </a>
+
+            <a href="/admin/edit" class="nav-link">
+                <i class="fas fa-user-pen"></i>
+                <span>Edit Seating</span>
+            </a>
+
+            <a href="/student" class="nav-link">
+                <i class="fas fa-magnifying-glass"></i>
+                <span>Student Search</span>
+            </a>
+
+        </nav>
+    </div>
+
     <div class="sidebar-footer">
-        <a href="{{ url_for('logout') }}" class="nav-link logout-link">
-            <i class="fas fa-sign-out-alt"></i> Logout
+
+        <a href="{{ url_for('logout') }}" class="logout-btn">
+            <i class="fas fa-right-from-bracket"></i>
+            Logout
         </a>
+
     </div>
-</div>
+
+</aside>
 
 <!-- Main Content -->
 <div class="main-content">
@@ -204,6 +236,40 @@
             {% endfor %}
         </div>
         {% endif %}
+
+        <!-- Recent Activity Section -->
+        <h5 class="section-heading mb-3"><i class="fas fa-history me-2"></i>Recent Activity</h5>
+        <div class="activity-list mb-4">
+            {% if activities %}
+                {% for act in activities %}
+                <div class="activity-item act-{{ act.type }}">
+                    <div class="activity-icon-wrap">
+                        {% if act.type == 'upload_students' %}
+                            <i class="fas fa-users"></i>
+                        {% elif act.type == 'upload_faculty' %}
+                            <i class="fas fa-chalkboard-teacher"></i>
+                        {% elif act.type == 'generate_seating' %}
+                            <i class="fas fa-cogs"></i>
+                        {% elif act.type == 'edit_seating' %}
+                            <i class="fas fa-edit"></i>
+                        {% elif act.type == 'download_pdf' %}
+                            <i class="fas fa-file-pdf"></i>
+                        {% else %}
+                            <i class="fas fa-info-circle"></i>
+                        {% endif %}
+                    </div>
+                    <div class="activity-details">
+                        <div class="activity-text">{{ act.text }}</div>
+                        <div class="activity-time">{{ act.time }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="text-muted text-center py-4 bg-white border rounded-4" style="border: 1px solid var(--border) !important;">
+                    <i class="fas fa-history me-2 opacity-50"></i>No recent activities recorded.
+                </div>
+            {% endif %}
+        </div>
 
     </div>
 </div>
