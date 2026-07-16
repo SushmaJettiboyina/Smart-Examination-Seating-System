@@ -8,6 +8,8 @@
 #   - /admin/save_edit: persists start/end times
 #   - /api/filter: returns start/end time fields
 #   - build_student_lookup: uses register_number natively
+#   - Integrated SQLite Master Data Management: Student, Faculty, and Room Masters.
+#   - Removed Year and Semester details. All roll number parsing uses generic format.
 
 import os
 import json
@@ -24,6 +26,7 @@ from excel_loader import (
     validate_faculty_excel_format,
     load_faculty_from_excel,
     get_department_summary,
+    load_faculty_master_from_excel,
 )
 from seating_algorithm import (generate_multiple_hall_distribution, get_seating_stats,
                                 validate_hall_layouts)
@@ -31,12 +34,17 @@ from pdf_generator import generate_all_pdfs
 from roll_range_helper import generate_roll_range
 from roll_parser import parse_manual_rolls, generate_start_end, remove_missing_rolls
 
+import db
+
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.config.from_object(Config)
 
 for folder in [Config.UPLOAD_FOLDER, Config.PDF_FOLDER]:
     os.makedirs(folder, exist_ok=True)
+
+# Initialize persistent master SQLite database
+db.init_db()
 
 
 # ---------------------------------------------------------------------------
@@ -99,18 +107,20 @@ def build_student_lookup(halls, exam_info=None):
 
 def log_activity(activity_type, text):
     """
-    Log activity to Flask session. Keep only the last 5.
+    Store the last 5 activities in the Flask session.
     """
     try:
         activities = load_session_data('activities') or []
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        activity = {
+        # Keep only the last 4 to make room for the new one (capped at 5)
+        activities = activities[-4:]
+        
+        # Add new activity with current timestamp
+        activities.append({
             'type': activity_type,
             'text': text,
-            'time': now_str
-        }
-        activities.insert(0, activity)
-        save_session_data('activities', activities[:5])
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+        save_session_data('activities', activities)
     except Exception as e:
         app.logger.error(f'log_activity error: {e}')
 
@@ -193,23 +203,21 @@ def assign_invigilators(halls, faculty_data=None, rotation_seed=None, force=Fals
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if session.get('logged_in'):
-        return redirect(url_for('dashboard'))
     if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
+        username = request.form.get('username')
+        password = request.form.get('password')
         if check_credentials(username, password):
             login_user()
-            flash('Welcome back, Admin!', 'success')
+            flash('Welcome back! You have logged in successfully.', 'success')
             return redirect(url_for('dashboard'))
-        flash('Invalid username or password.', 'danger')
+        flash('Invalid username or password. Please try again.', 'danger')
     return render_template('login.html')
 
 
 @app.route('/logout')
 def logout():
     logout_user()
-    flash('Logged out successfully.', 'info')
+    flash('You have logged out successfully.', 'info')
     return redirect(url_for('login'))
 
 
@@ -234,7 +242,7 @@ def dashboard():
 
 
 # ---------------------------------------------------------------------------
-# Upload
+# Upload (Stays for backward compatibility)
 # ---------------------------------------------------------------------------
 
 @app.route('/upload', methods=['GET', 'POST'])
@@ -242,61 +250,62 @@ def dashboard():
 def upload():
     if request.method == 'POST':
         if 'excel_file' not in request.files:
-            flash('No file selected.', 'danger')
+            flash('No file part', 'danger')
             return redirect(request.url)
         file = request.files['excel_file']
-        if not file.filename:
-            flash('No file selected.', 'danger')
+        if file.filename == '':
+            flash('No selected file', 'danger')
             return redirect(request.url)
-        if not allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
-            flash('Invalid file type. Please upload .xlsx or .xls.', 'danger')
-            return redirect(request.url)
+        if file and allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
 
-        filename = secure_filename(f"students_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-        filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
-        file.save(filepath)
+            is_valid, msg = validate_excel_format(filepath)
+            if not is_valid:
+                os.remove(filepath)
+                flash(f'Validation failed: {msg}', 'danger')
+                return redirect(request.url)
 
-        is_valid, message = validate_excel_format(filepath)
-        if not is_valid:
+            students, error = load_students_from_excel(filepath)
             os.remove(filepath)
-            flash(f'Validation failed: {message}', 'danger')
-            return redirect(request.url)
 
-        students, error = load_students_from_excel(filepath)
-        if error:
-            flash(f'Error loading file: {error}', 'danger')
-            return redirect(request.url)
+            if error:
+                flash(f'Error loading students: {error}', 'danger')
+                return redirect(request.url)
 
-        save_session_data('students',     students)
-        save_session_data('dept_summary', get_department_summary(students))
-        session['excel_filename'] = filename
-        session.pop('faculty_filename', None)
-        session.pop('faculty_data', None)
+            save_session_data('students',     students)
+            save_session_data('dept_summary', get_department_summary(students))
+            session['excel_filename'] = filename
+            session.pop('roll_range_input', None)
 
-        log_activity('upload_students', f"Uploaded student data: {len(students)} students loaded from Excel ({filename}).")
-        flash(f'✓ {message}', 'success')
-        return redirect(url_for('generate'))
+            log_activity('upload_students', f"Uploaded student data: {len(students)} students loaded from Excel ({filename}).")
+            flash(f'✓ {msg}', 'success')
+            return redirect(url_for('generate'))
 
-    return render_template('upload.html')
+    students = load_session_data('students')
+    return render_template('upload.html',
+                           excel_filename=session.get('excel_filename'),
+                           roll_range_input=session.get('roll_range_input'),
+                           student_count=len(students) if students else 0)
 
 
 @app.route('/upload-faculty', methods=['POST'])
 @login_required
 def upload_faculty():
     if 'faculty_file' not in request.files:
-        flash('No faculty file selected.', 'danger')
+        flash('No file part', 'danger')
         return redirect(url_for('upload'))
-
     file = request.files['faculty_file']
-    if not file.filename:
-        flash('No faculty file selected.', 'danger')
+    if file.filename == '':
+        flash('No selected file', 'danger')
         return redirect(url_for('upload'))
-    if not allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
-        flash('Invalid file type. Please upload .xlsx or .xls.', 'danger')
+    if not file or not allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
+        flash('Invalid file type.', 'danger')
         return redirect(url_for('upload'))
 
-    filename = secure_filename(f"faculty_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-    filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
     is_valid, message = validate_faculty_excel_format(filepath)
@@ -306,6 +315,7 @@ def upload_faculty():
         return redirect(url_for('upload'))
 
     faculty, error = load_faculty_from_excel(filepath)
+    os.remove(filepath)
     if error:
         flash(f'Error loading faculty: {error}', 'danger')
         return redirect(url_for('upload'))
@@ -333,7 +343,6 @@ def generate_manual_faculty():
         s = t.strip()
         if not s:
             continue
-        # support 'hall:invigilator' or 'hall|invigilator' or 'hall->invigilator'
         parts = re.split(r'\s*(?:\||:|->)\s*', s, maxsplit=1)
         if len(parts) == 2:
             left, right = parts[0].strip(), parts[1].strip()
@@ -393,16 +402,6 @@ def generate_faculty():
 @app.route('/generate-roll-range', methods=['POST'])
 @login_required
 def generate_roll_range_route():
-    """
-    Accept a roll number range (or multiple comma-separated ranges) from
-    the upload page form and store the generated student list in the session
-    — exactly the same format as an Excel upload — then redirect to /generate.
-
-    Form fields:
-        roll_range   : e.g. "24IT001 TO 24IT120"
-                       or    "24IT001 TO 24IT060, 24CSE001 TO 24CSE050"
-        dept_override: optional manual department override
-    """
     roll_range_input = request.form.get('roll_range', '').strip()
     dept_override    = request.form.get('dept_override', '').strip()
 
@@ -418,17 +417,13 @@ def generate_roll_range_route():
 
     save_session_data('students',     students)
     save_session_data('dept_summary', get_department_summary(students))
-    # Clear any leftover excel filename so the UI doesn't show a stale filename
     session.pop('excel_filename', None)
-    session['roll_range_input'] = roll_range_input   # store for display
+    session['roll_range_input'] = roll_range_input
 
     log_activity('upload_students', f"Generated student data: {len(students)} students loaded from Roll Range.")
     dept_counts = get_department_summary(students)
     dept_str    = ', '.join(f"{d}: {c}" for d, c in sorted(dept_counts.items()))
-    flash(
-        f'✓ {len(students)} students generated from roll range. ({dept_str})',
-        'success'
-    )
+    flash(f'✓ {len(students)} students generated from roll range. ({dept_str})', 'success')
     return redirect(url_for('generate'))
 
 
@@ -448,28 +443,28 @@ def generate_manual_rolls_route():
         return redirect(url_for('upload'))
 
     students, error = parse_manual_rolls(manual_input, override_dept=dept_override)
+
     if error:
-        flash(f'Manual Entry Error: {error}', 'danger')
+        flash(f'Manual Roll Error: {error}', 'danger')
         return redirect(url_for('upload'))
 
     if missing_input:
         students, removed = remove_missing_rolls(students, missing_input)
-        if removed:
-            flash(f'ℹ {removed} missing roll(s) excluded.', 'info')
+        flash(f'Excluded {removed} absent students based on list.', 'info')
 
     save_session_data('students',     students)
     save_session_data('dept_summary', get_department_summary(students))
     session.pop('excel_filename', None)
 
-    log_activity('upload_students', f"Imported student data: {len(students)} students loaded from manual entry.")
+    log_activity('upload_students', f"Generated student data: {len(students)} students loaded manually.")
     dept_counts = get_department_summary(students)
     dept_str    = ', '.join(f"{d}: {c}" for d, c in sorted(dept_counts.items()))
-    flash(f'✓ {len(students)} students loaded from manual entry. ({dept_str})', 'success')
+    flash(f'✓ {len(students)} students loaded manually. ({dept_str})', 'success')
     return redirect(url_for('generate'))
 
 
 # ---------------------------------------------------------------------------
-# Start–End Simple Input  (v8 new)
+# Start-End Range Route (v8 new)
 # ---------------------------------------------------------------------------
 
 @app.route('/generate-start-end', methods=['POST'])
@@ -491,8 +486,7 @@ def generate_start_end_route():
 
     if missing_input:
         students, removed = remove_missing_rolls(students, missing_input)
-        if removed:
-            flash(f'ℹ {removed} missing roll(s) excluded.', 'info')
+        flash(f'Excluded {removed} absent students based on list.', 'info')
 
     save_session_data('students',     students)
     save_session_data('dept_summary', get_department_summary(students))
@@ -506,44 +500,68 @@ def generate_start_end_route():
 
 
 # ---------------------------------------------------------------------------
-# Generate seating
+# Generate seating - Redesigned to use persistent SQLite Master Data
 # ---------------------------------------------------------------------------
 
 @app.route('/generate', methods=['GET', 'POST'])
 @login_required
 def generate():
-    students     = load_session_data('students')
-    dept_summary = load_session_data('dept_summary')
-
-    if not students:
-        flash('Please upload a student Excel file first.', 'warning')
-        return redirect(url_for('upload'))
-
     if request.method == 'POST':
         exam_name        = request.form.get('exam_name', '').strip()
         exam_date        = request.form.get('exam_date', '').strip()
         exam_start_time  = request.form.get('exam_start_time', '').strip()
         exam_end_time    = request.form.get('exam_end_time', '').strip()
-        num_halls        = int(request.form.get('num_halls', 1))
         flow_type        = request.form.get('flow_type', 'mixed')
-        default_rows     = int(request.form.get('benches_per_hall', 10))
-        default_cols     = int(request.form.get('seats_per_bench', 3))
 
-        hall_layouts = []
-        for i in range(1, num_halls + 1):
-            rows      = int(request.form.get(f'hall_rows_{i}', default_rows))
-            cols      = int(request.form.get(f'hall_cols_{i}', default_cols))
-            hall_name = request.form.get(f'hall_name_{i}', '').strip()
-            if not hall_name:
-                hall_name = f'Hall {i}'
-            hall_layouts.append({'rows': rows, 'cols': cols, 'name': hall_name})
+        depts        = request.form.getlist('depts')
+        room_numbers = request.form.getlist('rooms')
+        faculty_ids  = request.form.getlist('faculty')
 
-        is_valid, msg, total_capacity = validate_hall_layouts(
-            num_halls, hall_layouts, len(students))
-        if not is_valid:
+        if not room_numbers:
+            flash('Please select at least one examination room.', 'danger')
+            return redirect(url_for('generate'))
+
+        # Fetch selected students matching Department filter from Master DB
+        conn = db.get_db_connection()
+        student_query = 'SELECT register_number, name, department FROM students_master WHERE 1=1'
+        student_params = []
+        if depts:
+            placeholders = ', '.join('?' for _ in depts)
+            student_query += f' AND department IN ({placeholders})'
+            student_params.extend(depts)
+            
+        student_rows = conn.execute(student_query, student_params).fetchall()
+        students = [dict(r) for r in student_rows]
+
+        if not students:
+            conn.close()
+            flash('No students match the selected Department filters.', 'danger')
+            return redirect(url_for('generate'))
+
+        # Fetch selected Rooms details from Master DB
+        placeholders = ', '.join('?' for _ in room_numbers)
+        room_rows = conn.execute(f'SELECT * FROM rooms_master WHERE room_number IN ({placeholders})', room_numbers).fetchall()
+        selected_rooms = [dict(r) for r in room_rows]
+        total_capacity = sum(r['capacity'] for r in selected_rooms)
+
+        # Fetch selected Faculty details from Master DB
+        selected_faculty = []
+        if faculty_ids:
+            placeholders = ', '.join('?' for _ in faculty_ids)
+            faculty_rows = conn.execute(f'SELECT name FROM faculty_master WHERE faculty_id IN ({placeholders})', faculty_ids).fetchall()
+            selected_faculty = [r['name'] for r in faculty_rows]
+
+        conn.close()
+
+        # Validate Capacity Block
+        if total_capacity < len(students):
             shortage = len(students) - total_capacity
-            flash(f'⚠️ Seating Generation Blocked: Insufficient Seating Capacity! Required Seats: {len(students)}, Available Seats: {total_capacity} (Shortage of {shortage} seat{"s" if shortage != 1 else ""}). Please add more halls or expand layout sizes.', 'danger')
-            return redirect(request.url)
+            flash(f'⚠️ Seating Generation Blocked: Insufficient Seating Capacity! Required Seats: {len(students)}, Available Seats: {total_capacity} (Shortage of {shortage} seat{"s" if shortage != 1 else ""}). Please select more rooms.', 'danger')
+            return redirect(url_for('generate'))
+
+        # Map selected Rooms to layouts expected by algorithm
+        hall_layouts = [{'rows': room['rows'], 'cols': room['cols'], 'name': room['room_number']} for room in selected_rooms]
+        num_halls = len(hall_layouts)
 
         exam_info = {
             'exam_name':        exam_name,
@@ -551,16 +569,18 @@ def generate():
             'exam_start_time':  exam_start_time,
             'exam_end_time':    exam_end_time,
             'num_halls':        num_halls,
-            'benches_per_hall': default_rows,
-            'seats_per_bench':  default_cols,
+            'benches_per_hall': selected_rooms[0]['rows'] if selected_rooms else 10,
+            'seats_per_bench':  selected_rooms[0]['cols'] if selected_rooms else 3,
             'flow_type':        flow_type,
             'total_capacity':   total_capacity,
             'hall_layouts':     hall_layouts,
         }
 
+        # Generate seating arrangement
         halls = generate_multiple_hall_distribution(
-            students, num_halls, default_rows, default_cols,
-            flow_type, hall_layouts=hall_layouts)
+            students, num_halls, 10, 3,
+            flow_type, hall_layouts=hall_layouts
+        )
 
         for idx, h in enumerate(halls):
             layout_name = hall_layouts[idx].get('name', '').strip() if idx < len(hall_layouts) else ''
@@ -569,8 +589,8 @@ def generate():
             elif 'hall_name' not in h:
                 h['hall_name'] = f"Hall {h['hall_number']}"
 
-        # Ensure every hall has an assigned invigilator (faculty)
-        faculty_data = load_session_data('faculty_data') or []
+        # Assign invigilators (faculty)
+        faculty_data = [{'hall_number': None, 'hall_name': None, 'invigilator': name} for name in selected_faculty]
         try:
             if faculty_data:
                 halls = assign_invigilators(halls, faculty_data=faculty_data)
@@ -582,6 +602,9 @@ def generate():
         stats     = get_seating_stats(halls)
         pdf_files = generate_all_pdfs(halls, exam_info, Config.PDF_FOLDER)
 
+        # Save to session (backward compatibility)
+        save_session_data('students',     students)
+        save_session_data('dept_summary', get_department_summary(students))
         save_session_data('halls',     halls)
         save_session_data('stats',     stats)
         save_session_data('exam_info', exam_info)
@@ -591,11 +614,348 @@ def generate():
         flash(f'✓ Seating arrangement generated successfully! Required Seats: {len(students)}, Available Seats: {total_capacity}. Utilization Rate: {round(len(students) / total_capacity * 100, 1)}%.', 'success')
         return redirect(url_for('seating_result'))
 
+    # GET Request: Fetch selectors
+    filters = db.get_student_filters()
+    rooms = db.get_all_rooms()
+    faculty = db.get_all_faculty()
+
     return render_template('generate.html',
-                           students=students,
-                           dept_summary=dept_summary,
-                           seating_flows=Config.SEATING_FLOWS,
-                           student_count=len(students))
+                           filters=filters,
+                           rooms=rooms,
+                           faculty=faculty,
+                           seating_flows=Config.SEATING_FLOWS)
+
+
+# ---------------------------------------------------------------------------
+# Seating generation Live Summary API
+# ---------------------------------------------------------------------------
+
+@app.route('/api/generate-summary', methods=['POST'])
+@login_required
+def api_generate_summary():
+    data = request.get_json() or {}
+    depts = data.get('depts', [])
+    room_numbers = data.get('rooms', [])
+    faculty_ids = data.get('faculty', [])
+
+    conn = db.get_db_connection()
+    
+    # Fetch matching student details
+    student_query = 'SELECT register_number, department FROM students_master WHERE 1=1'
+    student_params = []
+    if depts:
+        placeholders = ', '.join('?' for _ in depts)
+        student_query += f' AND department IN ({placeholders})'
+        student_params.extend(depts)
+        
+    students = conn.execute(student_query, student_params).fetchall()
+    students_selected = len(students)
+
+    # Calculate department breakdown
+    dept_summary = {}
+    for s in students:
+        d = s['department']
+        dept_summary[d] = dept_summary.get(d, 0) + 1
+
+    # Fetch selected rooms details
+    total_capacity = 0
+    if room_numbers:
+        placeholders = ', '.join('?' for _ in room_numbers)
+        room_rows = conn.execute(f'SELECT capacity FROM rooms_master WHERE room_number IN ({placeholders})', room_numbers).fetchall()
+        total_capacity = sum(r['capacity'] for r in room_rows)
+
+    conn.close()
+
+    utilization = round((students_selected / total_capacity * 100), 1) if total_capacity > 0 else 0
+    insufficient = total_capacity < students_selected if total_capacity > 0 or students_selected > 0 else False
+
+    return jsonify({
+        'students_selected': students_selected,
+        'faculty_selected': len(faculty_ids),
+        'rooms_selected': len(room_numbers),
+        'total_capacity': total_capacity,
+        'seat_utilization': f"{utilization}%" if total_capacity > 0 else "0%",
+        'insufficient': insufficient,
+        'dept_summary': dept_summary
+    })
+
+
+# ---------------------------------------------------------------------------
+# STUDENT MASTER ROUTES
+# ---------------------------------------------------------------------------
+
+@app.route('/admin/students')
+@login_required
+def admin_students():
+    search = request.args.get('search', '').strip()
+    dept = request.args.get('dept', '').strip()
+    
+    students = db.get_all_students(search_query=search, department=dept)
+    filters = db.get_student_filters()
+    
+    return render_template('admin_students.html', 
+                           students=students, 
+                           filters=filters,
+                           search=search, 
+                           selected_dept=dept)
+
+
+@app.route('/admin/students/add', methods=['POST'])
+@login_required
+def admin_students_add():
+    reg_no = request.form.get('register_number', '').strip().upper()
+    name = request.form.get('name', '').strip()
+    dept = request.form.get('department', '').strip().upper()
+    
+    if not reg_no or not name or not dept:
+        flash('All fields are required.', 'danger')
+        return redirect(url_for('admin_students'))
+        
+    success, err = db.add_student(reg_no, name, dept)
+    if not success:
+        flash(f'Error: {err}', 'danger')
+    else:
+        log_activity('add_student', f"Manually added student: {name} ({reg_no})")
+        flash(f'✓ Student {name} added successfully.', 'success')
+    return redirect(url_for('admin_students'))
+
+
+@app.route('/admin/students/edit', methods=['POST'])
+@login_required
+def admin_students_edit():
+    reg_no = request.form.get('register_number', '').strip().upper()
+    name = request.form.get('name', '').strip()
+    dept = request.form.get('department', '').strip().upper()
+    
+    if not reg_no or not name or not dept:
+        flash('All fields are required.', 'danger')
+        return redirect(url_for('admin_students'))
+        
+    db.update_student(reg_no, name, dept)
+    log_activity('edit_student', f"Updated student info: {name} ({reg_no})")
+    flash(f'✓ Student details updated.', 'success')
+    return redirect(url_for('admin_students'))
+
+
+@app.route('/admin/students/delete/<register_number>')
+@login_required
+def admin_students_delete(register_number):
+    db.delete_student(register_number)
+    log_activity('delete_student', f"Deleted student: {register_number}")
+    flash(f'✓ Student {register_number} deleted.', 'success')
+    return redirect(url_for('admin_students'))
+
+
+@app.route('/admin/students/upload', methods=['POST'])
+@login_required
+def admin_students_upload():
+    if 'excel_file' not in request.files:
+        flash('No file part', 'danger')
+        return redirect(url_for('admin_students'))
+    file = request.files['excel_file']
+    if file.filename == '':
+        flash('No selected file', 'danger')
+        return redirect(url_for('admin_students'))
+    if file and allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        is_valid, msg = validate_excel_format(filepath)
+        if not is_valid:
+            os.remove(filepath)
+            flash(f'Validation failed: {msg}', 'danger')
+            return redirect(url_for('admin_students'))
+            
+        students, err = load_students_from_excel(filepath)
+        os.remove(filepath)
+        
+        if err:
+            flash(f'Error reading file: {err}', 'danger')
+            return redirect(url_for('admin_students'))
+            
+        added = db.add_students_batch(students)
+        log_activity('upload_students', f"Uploaded student master: {added} records loaded from Excel ({filename}).")
+        flash(f'✓ Successfully loaded/updated {added} students in Master database.', 'success')
+    else:
+        flash('Invalid file extension. Please upload an Excel sheet.', 'danger')
+    return redirect(url_for('admin_students'))
+
+
+# ---------------------------------------------------------------------------
+# FACULTY MASTER ROUTES
+# ---------------------------------------------------------------------------
+
+@app.route('/admin/faculty')
+@login_required
+def admin_faculty():
+    search = request.args.get('search', '').strip()
+    dept = request.args.get('dept', '').strip()
+    faculty = db.get_all_faculty(search_query=search, department=dept)
+    
+    conn = db.get_db_connection()
+    depts = [r[0] for r in conn.execute('SELECT DISTINCT department FROM faculty_master ORDER BY department').fetchall() if r[0]]
+    conn.close()
+    
+    return render_template('admin_faculty.html', 
+                           faculty=faculty, 
+                           departments=depts,
+                           search=search, 
+                           selected_dept=dept)
+
+
+@app.route('/admin/faculty/add', methods=['POST'])
+@login_required
+def admin_faculty_add():
+    fid = request.form.get('faculty_id', '').strip().upper()
+    name = request.form.get('name', '').strip()
+    dept = request.form.get('department', '').strip().upper()
+    
+    if not fid or not name or not dept:
+        flash('All fields are required.', 'danger')
+        return redirect(url_for('admin_faculty'))
+        
+    success, err = db.add_faculty(fid, name, dept)
+    if not success:
+        flash(f'Error: {err}', 'danger')
+    else:
+        log_activity('add_faculty', f"Manually added faculty: {name} ({fid})")
+        flash(f'✓ Faculty member {name} added.', 'success')
+    return redirect(url_for('admin_faculty'))
+
+
+@app.route('/admin/faculty/edit', methods=['POST'])
+@login_required
+def admin_faculty_edit():
+    fid = request.form.get('faculty_id', '').strip().upper()
+    name = request.form.get('name', '').strip()
+    dept = request.form.get('department', '').strip().upper()
+    
+    if not fid or not name or not dept:
+        flash('All fields are required.', 'danger')
+        return redirect(url_for('admin_faculty'))
+        
+    db.update_faculty(fid, name, dept)
+    log_activity('edit_faculty', f"Updated faculty info: {name} ({fid})")
+    flash(f'✓ Faculty details updated.', 'success')
+    return redirect(url_for('admin_faculty'))
+
+
+@app.route('/admin/faculty/delete/<faculty_id>')
+@login_required
+def admin_faculty_delete(faculty_id):
+    db.delete_faculty(faculty_id)
+    log_activity('delete_faculty', f"Deleted faculty member: {faculty_id}")
+    flash(f'✓ Faculty member {faculty_id} deleted.', 'success')
+    return redirect(url_for('admin_faculty'))
+
+
+@app.route('/admin/faculty/upload', methods=['POST'])
+@login_required
+def admin_faculty_upload():
+    if 'excel_file' not in request.files:
+        flash('No file part', 'danger')
+        return redirect(url_for('admin_faculty'))
+    file = request.files['excel_file']
+    if file.filename == '':
+        flash('No selected file', 'danger')
+        return redirect(url_for('admin_faculty'))
+    if file and allowed_file(file.filename, Config.ALLOWED_EXTENSIONS):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        is_valid, msg = validate_faculty_excel_format(filepath)
+        if not is_valid:
+            os.remove(filepath)
+            flash(f'Validation failed: {msg}', 'danger')
+            return redirect(url_for('admin_faculty'))
+            
+        faculty, err = load_faculty_master_from_excel(filepath)
+        os.remove(filepath)
+        
+        if err:
+            flash(f'Error reading file: {err}', 'danger')
+            return redirect(url_for('admin_faculty'))
+            
+        added = db.add_faculty_batch(faculty)
+        log_activity('upload_faculty', f"Uploaded faculty master: {added} records loaded from Excel ({filename}).")
+        flash(f'✓ Successfully loaded/updated {added} faculty in Master database.', 'success')
+    else:
+        flash('Invalid file extension. Please upload an Excel sheet.', 'danger')
+    return redirect(url_for('admin_faculty'))
+
+
+# ---------------------------------------------------------------------------
+# ROOM MASTER ROUTES
+# ---------------------------------------------------------------------------
+
+@app.route('/admin/rooms')
+@login_required
+def admin_rooms():
+    search = request.args.get('search', '').strip()
+    rooms = db.get_all_rooms(search_query=search)
+    return render_template('admin_rooms.html', rooms=rooms, search=search)
+
+
+@app.route('/admin/rooms/add', methods=['POST'])
+@login_required
+def admin_rooms_add():
+    room_no = request.form.get('room_number', '').strip().upper()
+    block = request.form.get('block', '').strip()
+    
+    try:
+        rows = int(request.form.get('rows', 10))
+        cols = int(request.form.get('cols', 3))
+        capacity = int(request.form.get('capacity', rows * cols))
+    except Exception:
+        flash('Rows, Columns, and Capacity must be positive integers.', 'danger')
+        return redirect(url_for('admin_rooms'))
+        
+    if not room_no or not block or rows <= 0 or cols <= 0 or capacity <= 0:
+        flash('All fields are required and must be valid.', 'danger')
+        return redirect(url_for('admin_rooms'))
+        
+    success, err = db.add_room(room_no, block, capacity, rows, cols)
+    if not success:
+        flash(f'Error: {err}', 'danger')
+    else:
+        log_activity('add_room', f"Added classroom: {room_no} in {block} (Capacity: {capacity})")
+        flash(f'✓ Room {room_no} added successfully.', 'success')
+    return redirect(url_for('admin_rooms'))
+
+
+@app.route('/admin/rooms/edit', methods=['POST'])
+@login_required
+def admin_rooms_edit():
+    room_no = request.form.get('room_number', '').strip().upper()
+    block = request.form.get('block', '').strip()
+    
+    try:
+        rows = int(request.form.get('rows', 10))
+        cols = int(request.form.get('cols', 3))
+        capacity = int(request.form.get('capacity', rows * cols))
+    except Exception:
+        flash('Rows, Columns, and Capacity must be positive integers.', 'danger')
+        return redirect(url_for('admin_rooms'))
+        
+    if not room_no or not block or rows <= 0 or cols <= 0 or capacity <= 0:
+        flash('All fields are required and must be valid.', 'danger')
+        return redirect(url_for('admin_rooms'))
+        
+    db.update_room(room_no, block, capacity, rows, cols)
+    log_activity('edit_room', f"Updated room details: {room_no} (Capacity: {capacity})")
+    flash(f'✓ Room details updated.', 'success')
+    return redirect(url_for('admin_rooms'))
+
+
+@app.route('/admin/rooms/delete/<room_number>')
+@login_required
+def admin_rooms_delete(room_number):
+    db.delete_room(room_number)
+    log_activity('delete_room', f"Deleted classroom: {room_number}")
+    flash(f'✓ Room {room_number} deleted.', 'success')
+    return redirect(url_for('admin_rooms'))
 
 
 # ---------------------------------------------------------------------------
@@ -884,10 +1244,6 @@ def api_stats():
 @app.route('/update-hall-order', methods=['POST'])
 @login_required
 def update_hall_order():
-    """
-    Receive JSON { "order": [2, 0, 1] } and reorder session['halls'] accordingly.
-    After reordering, regenerate PDFs so download links stay in sync.
-    """
     try:
         payload = request.get_json(force=True)
         if not payload or 'order' not in payload:

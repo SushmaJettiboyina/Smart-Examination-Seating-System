@@ -34,9 +34,19 @@
                 <span>Dashboard</span>
             </a>
 
-            <a href="{{ url_for('upload') }}" class="nav-link">
-                <i class="fas fa-users"></i>
-                <span>Students</span>
+            <a href="{{ url_for('admin_students') }}" class="nav-link">
+                <i class="fas fa-user-graduate"></i>
+                <span>Student Master</span>
+            </a>
+
+            <a href="{{ url_for('admin_faculty') }}" class="nav-link">
+                <i class="fas fa-chalkboard-teacher"></i>
+                <span>Faculty Master</span>
+            </a>
+
+            <a href="{{ url_for('admin_rooms') }}" class="nav-link">
+                <i class="fas fa-door-open"></i>
+                <span>Room Master</span>
             </a>
 
             <a href="{{ url_for('generate') }}" class="nav-link">

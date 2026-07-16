@@ -1,9 +1,8 @@
 # excel_loader.py - Excel File Handler  v5
-# UPDATED: register_number mapping, graceful fallback, broad column name support
+# UPDATED: register_number mapping, generic columns, faculty master upload support
 
 import pandas as pd
 import os
-
 
 # All accepted aliases for the register number column
 _REGISTER_ALIASES = {
@@ -35,6 +34,9 @@ _INVIGILATOR_ALIASES = {
     'invigilator', 'faculty', 'faculty name', 'faculty_name',
     'teacher', 'teacher name', 'teacher_name', 'proctor', 'supervisor',
     'examiner', 'examiner name', 'examiner_name',
+}
+_FACULTY_ID_ALIASES = {
+    'faculty id', 'faculty_id', 'id', 'emp id', 'empid', 'employee id', 'fac id', 'fac_id'
 }
 
 
@@ -158,12 +160,49 @@ def load_faculty_from_excel(filepath):
         return None, f"Error loading faculty: {str(e)}"
 
 
+def load_faculty_master_from_excel(filepath):
+    """
+    Load faculty master records from Excel file.
+    Returns list of dicts with keys: faculty_id, invigilator, department.
+    """
+    try:
+        df = pd.read_excel(filepath)
+
+        invig_col  = _find_column(df.columns.tolist(), _INVIGILATOR_ALIASES)
+        dept_col   = _find_column(df.columns.tolist(), _DEPT_ALIASES)
+        id_col     = _find_column(df.columns.tolist(), _FACULTY_ID_ALIASES)
+
+        if invig_col is None:
+            return None, "Missing Invigilator/Faculty column. Please check column headers."
+
+        faculty = []
+        for _, row in df.iterrows():
+            name = str(row[invig_col]).strip()
+            if not name or name.lower() in ('nan', 'none', ''):
+                continue
+
+            dept = str(row[dept_col]).strip().upper() if (dept_col and not pd.isna(row[dept_col])) else 'N/A'
+            fid = str(row[id_col]).strip() if (id_col and not pd.isna(row[id_col])) else ''
+
+            faculty.append({
+                'faculty_id':  fid,
+                'invigilator': name,
+                'department':  dept
+            })
+
+        if not faculty:
+            return None, "No valid faculty master entries found in the file."
+
+        return faculty, None
+    except Exception as e:
+        return None, f"Error loading faculty master: {str(e)}"
+
+
 def load_students_from_excel(filepath):
     """
     Load student data from Excel file.
     Returns list of dicts:
-        [{'register_number': '2021CSE001', 'name': 'Alice', 'department': 'CSE'}, ...]
-    Falls back gracefully if name column is absent.
+        [{'register_number': '24CSE001', 'name': 'Alice', 'department': 'CSE'}, ...]
     """
     try:
         df = pd.read_excel(filepath)

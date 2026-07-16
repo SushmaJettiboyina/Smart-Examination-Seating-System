@@ -153,18 +153,16 @@
 <div class="sidebar">
     <div class="sidebar-brand"><i class="fas fa-graduation-cap me-2"></i><span>Seating AI</span></div>
     <nav class="sidebar-nav">
-        <a href="{{ url_for('dashboard') }}"       class="nav-link"><i class="fas fa-th-large"></i> Dashboard</a>
-        <a href="{{ url_for('upload') }}"          class="nav-link"><i class="fas fa-upload"></i> Upload Students</a>
-        <a href="{{ url_for('generate') }}"        class="nav-link"><i class="fas fa-cogs"></i> Generate Seating</a>
-        <a href="{{ url_for('seating_result') }}"  class="nav-link"><i class="fas fa-table"></i> View Results</a>
-        <a href="{{ url_for('seating_preview') }}" class="nav-link active"><i class="fas fa-edit"></i> Seat Editor</a>
+        <a href="{{ url_for('dashboard') }}" class="nav-link"><i class="fas fa-th-large"></i> Dashboard</a>
+        <a href="{{ url_for('admin_students') }}" class="nav-link"><i class="fas fa-user-graduate"></i> Student Master</a>
+        <a href="{{ url_for('admin_faculty') }}" class="nav-link"><i class="fas fa-chalkboard-teacher"></i> Faculty Master</a>
+        <a href="{{ url_for('admin_rooms') }}" class="nav-link"><i class="fas fa-door-open"></i> Room Master</a>
+        <a href="{{ url_for('generate') }}" class="nav-link"><i class="fas fa-cogs"></i> Generate Seating</a>
+        <a href="{{ url_for('seating_result') }}" class="nav-link"><i class="fas fa-table"></i> View Results</a>
+        <a href="{{ url_for('seating_preview') }}" class="nav-link active"><i class="fas fa-arrows-alt"></i> Seat Editor</a>
+        <a href="/admin/edit" class="nav-link"><i class="fas fa-edit"></i> Edit Seating</a>
+        <a href="/student" class="nav-link"><i class="fas fa-search"></i> Student Search</a>
     </nav>
-        <a href="/admin/edit" class="nav-link">
-            <i class="fas fa-edit"></i> Edit Seating
-        </a>
-        <a href="/student" class="nav-link">
-            <i class="fas fa-search"></i> Student Search
-        </a>
     <div class="sidebar-footer">
         <a href="{{ url_for('logout') }}" class="nav-link logout-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
     </div>
