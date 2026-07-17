@@ -163,6 +163,17 @@ h1, h2, h3, h4, h5, h6,
   transition: var(--transition);
 }
 
+.sidebar-heading{
+    display:block;
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:2px;
+    color:#94a3b8;
+    text-transform:uppercase;
+    margin:18px 20px 12px;
+    white-space:nowrap;
+}
+
 .btn-login:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(37, 99, 235, .35);
@@ -841,6 +852,8 @@ h1, h2, h3, h4, h5, h6,
   margin: 0;
   font-size: .875rem;
   border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .seating-table thead th {
@@ -852,6 +865,7 @@ h1, h2, h3, h4, h5, h6,
   letter-spacing: .03em;
   text-transform: uppercase;
   border: none;
+  text-align: center;
 }
 
 .seating-table tbody tr {
@@ -862,7 +876,7 @@ h1, h2, h3, h4, h5, h6,
 .seating-table tbody tr:nth-child(even) { background: #f8fafc; }
 .seating-table tbody tr:hover { background: #f1f5f9; }
 
-.bench-col { width: 70px; }
+.bench-col { width: 80px; }
 
 .bench-num {
   font-weight: 700;
@@ -871,7 +885,11 @@ h1, h2, h3, h4, h5, h6,
   font-size: 0.95rem;
 }
 
-.seating-table td { padding: .75rem 1rem; vertical-align: middle; }
+.seating-table td { 
+  padding: .75rem 1rem; 
+  vertical-align: middle; 
+  text-align: center;
+}
 
 /* Seat Cells */
 .seat-cell {
@@ -879,6 +897,7 @@ h1, h2, h3, h4, h5, h6,
   padding: .5rem .75rem;
   text-align: center;
   min-width: 86px;
+  margin: 0 auto;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   border: 1px solid rgba(0,0,0,0.03);
 }
