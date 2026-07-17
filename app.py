@@ -602,6 +602,20 @@ def generate():
         stats     = get_seating_stats(halls)
         pdf_files = generate_all_pdfs(halls, exam_info, Config.PDF_FOLDER)
 
+        # Save to database history
+        db.save_exam(
+            exam_name=exam_name,
+            exam_date=exam_date,
+            exam_start_time=exam_start_time,
+            exam_end_time=exam_end_time,
+            flow_type=flow_type,
+            total_students=len(students),
+            total_halls=num_halls,
+            halls=halls,
+            stats=stats,
+            pdf_files=pdf_files
+        )
+
         # Save to session (backward compatibility)
         save_session_data('students',     students)
         save_session_data('dept_summary', get_department_summary(students))
@@ -956,6 +970,80 @@ def admin_rooms_delete(room_number):
     log_activity('delete_room', f"Deleted classroom: {room_number}")
     flash(f'✓ Room {room_number} deleted.', 'success')
     return redirect(url_for('admin_rooms'))
+
+
+# ---------------------------------------------------------------------------
+# EXAM HISTORY ROUTES
+# ---------------------------------------------------------------------------
+
+@app.route('/admin/exams')
+@login_required
+def admin_exams():
+    exams = db.get_all_exams()
+    return render_template('admin_exams.html', exams=exams)
+
+
+@app.route('/admin/exams/load/<int:exam_id>')
+@login_required
+def admin_exams_load(exam_id):
+    exam = db.get_exam_by_id(exam_id)
+    if not exam:
+        flash('Exam record not found.', 'danger')
+        return redirect(url_for('admin_exams'))
+
+    try:
+        halls = json.loads(exam['halls_json'])
+        stats = json.loads(exam['stats_json'])
+        pdf_files = json.loads(exam['pdf_files_json'])
+        
+        exam_info = {
+            'exam_name':        exam['exam_name'],
+            'exam_date':        exam['exam_date'],
+            'exam_start_time':  exam['exam_start_time'],
+            'exam_end_time':    exam['exam_end_time'],
+            'num_halls':        exam['total_halls'],
+            'flow_type':        exam['flow_type'],
+            'total_capacity':   stats.get('total_capacity', 0)
+        }
+        
+        students = []
+        for h in halls:
+            for r in h.get('benches', []):
+                for s in r:
+                    if s:
+                        students.append({
+                            'register_number': s.get('register_number') or s.get('roll_no', ''),
+                            'name':            s.get('name', ''),
+                            'department':      s.get('department', '')
+                        })
+
+        save_session_data('students',     students)
+        save_session_data('dept_summary', get_department_summary(students))
+        save_session_data('halls',     halls)
+        save_session_data('stats',     stats)
+        save_session_data('exam_info', exam_info)
+        save_session_data('pdf_files', pdf_files)
+
+        log_activity('load_exam', f"Loaded seating arrangement for historical exam: {exam['exam_name']}.")
+        flash(f"✓ Exam '{exam['exam_name']}' loaded into current session. You can now view, edit, or download its plans.", 'success')
+        return redirect(url_for('seating_result'))
+    except Exception as e:
+        app.logger.error(f'admin_exams_load error: {e}')
+        flash(f'Error restoring exam session: {str(e)}', 'danger')
+        return redirect(url_for('admin_exams'))
+
+
+@app.route('/admin/exams/delete/<int:exam_id>')
+@login_required
+def admin_exams_delete(exam_id):
+    exam = db.get_exam_by_id(exam_id)
+    if exam:
+        db.delete_exam(exam_id)
+        log_activity('delete_exam', f"Deleted exam history: {exam['exam_name']}.")
+        flash(f"✓ Exam history for '{exam['exam_name']}' deleted.", 'success')
+    else:
+        flash('Exam record not found.', 'danger')
+    return redirect(url_for('admin_exams'))
 
 
 # ---------------------------------------------------------------------------

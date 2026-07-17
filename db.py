@@ -42,6 +42,24 @@ def init_db():
             cols INTEGER NOT NULL
         )
     ''')
+
+    # 4. Exams History Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS exams_master (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_name TEXT NOT NULL,
+            exam_date TEXT NOT NULL,
+            exam_start_time TEXT NOT NULL,
+            exam_end_time TEXT NOT NULL,
+            flow_type TEXT NOT NULL,
+            total_students INTEGER NOT NULL,
+            total_halls INTEGER NOT NULL,
+            halls_json TEXT NOT NULL,
+            stats_json TEXT NOT NULL,
+            pdf_files_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     
     conn.commit()
     
@@ -299,3 +317,47 @@ def get_all_rooms(search_query=None):
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ─────────────────────────────────────────────────────────────
+# EXAMS HISTORY MASTER CRUD
+# ─────────────────────────────────────────────────────────────
+
+import json
+
+def save_exam(exam_name, exam_date, exam_start_time, exam_end_time, flow_type, total_students, total_halls, halls, stats, pdf_files):
+    conn = get_db_connection()
+    try:
+        halls_json = json.dumps(halls)
+        stats_json = json.dumps(stats)
+        pdf_files_json = json.dumps(pdf_files)
+        conn.execute(
+            '''INSERT INTO exams_master 
+               (exam_name, exam_date, exam_start_time, exam_end_time, flow_type, total_students, total_halls, halls_json, stats_json, pdf_files_json) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (exam_name, exam_date, exam_start_time, exam_end_time, flow_type, total_students, total_halls, halls_json, stats_json, pdf_files_json)
+        )
+        conn.commit()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+    finally:
+        conn.close()
+
+def get_all_exams():
+    conn = get_db_connection()
+    rows = conn.execute('SELECT id, exam_name, exam_date, exam_start_time, exam_end_time, flow_type, total_students, total_halls, created_at FROM exams_master ORDER BY created_at DESC').fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_exam_by_id(exam_id):
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM exams_master WHERE id = ?', (exam_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def delete_exam(exam_id):
+    conn = get_db_connection()
+    conn.execute('DELETE FROM exams_master WHERE id = ?', (exam_id,))
+    conn.commit()
+    conn.close()

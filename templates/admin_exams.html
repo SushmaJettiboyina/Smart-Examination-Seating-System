@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exam Seating History – AI Exam Seating System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        .exam-history-card {
+            background: #fff; border: 1px solid var(--border); border-radius: 12px;
+            padding: 1.2rem; box-shadow: var(--shadow-sm);
+        }
+        .action-btn-sm {
+            padding: 0.25rem 0.6rem; font-size: 0.78rem; border-radius: 6px;
+        }
+    </style>
+</head>
+<body class="app-body">
+
+<div class="sidebar">
+    <div class="sidebar-brand"><i class="fas fa-graduation-cap me-2"></i><span>Seating AI</span></div>
+    <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}" class="nav-link"><i class="fas fa-th-large"></i> Dashboard</a>
+        <a href="{{ url_for('admin_students') }}" class="nav-link"><i class="fas fa-user-graduate"></i> Student Master</a>
+        <a href="{{ url_for('admin_faculty') }}" class="nav-link"><i class="fas fa-chalkboard-teacher"></i> Faculty Master</a>
+        <a href="{{ url_for('admin_rooms') }}" class="nav-link"><i class="fas fa-door-open"></i> Room Master</a>
+        <a href="{{ url_for('admin_exams') }}" class="nav-link active"><i class="fas fa-history"></i> Exam History</a>
+        <a href="{{ url_for('generate') }}" class="nav-link"><i class="fas fa-cogs"></i> Generate Seating</a>
+        <a href="{{ url_for('seating_result') }}" class="nav-link"><i class="fas fa-table"></i> View Results</a>
+        <a href="{{ url_for('seating_preview') }}" class="nav-link"><i class="fas fa-arrows-alt"></i> Seat Editor</a>
+        <a href="/admin/edit" class="nav-link"><i class="fas fa-edit"></i> Edit Seating</a>
+        <a href="/student" class="nav-link"><i class="fas fa-search"></i> Student Search</a>
+    </nav>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('logout') }}" class="nav-link logout-link"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="topbar">
+        <div class="topbar-title"><h4><i class="fas fa-history me-2"></i>Exam Seating History</h4></div>
+        <div class="topbar-right"><span class="admin-badge"><i class="fas fa-user-shield me-1"></i>Admin</span></div>
+    </div>
+
+    <div class="content-area">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}{% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+              {{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}{% endif %}
+        {% endwith %}
+
+        <!-- History Table -->
+        <div class="exam-history-card">
+            <h6 class="fw-bold mb-3"><i class="fas fa-list me-2"></i>Saved Seating Arrangements ({{ exams|length }})</h6>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Exam / Paper Name</th>
+                            <th>Exam Date</th>
+                            <th>Exam Session Time</th>
+                            <th>Total Students</th>
+                            <th>Halls Used</th>
+                            <th>Saved At</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if exams %}
+                            {% for e in exams %}
+                            <tr>
+                                <td class="fw-bold text-primary">{{ e.exam_name }}</td>
+                                <td><span class="badge bg-light text-dark"><i class="far fa-calendar-alt me-1 text-primary"></i>{{ e.exam_date }}</span></td>
+                                <td><span class="text-muted"><i class="far fa-clock me-1"></i>{{ e.exam_start_time }} – {{ e.exam_end_time }}</span></td>
+                                <td><strong>{{ e.total_students }}</strong> students</td>
+                                <td><strong>{{ e.total_halls }}</strong> halls</td>
+                                <td><small class="text-muted">{{ e.created_at }}</small></td>
+                                <td class="text-end">
+                                    <a href="{{ url_for('admin_exams_load', exam_id=e.id) }}" class="btn btn-primary action-btn-sm me-1">
+                                        <i class="fas fa-folder-open me-1"></i> View &amp; Download
+                                    </a>
+                                    <a href="{{ url_for('admin_exams_delete', exam_id=e.id) }}" class="btn btn-outline-danger action-btn-sm" onclick="return confirm('Are you sure you want to delete this historical exam arrangement: {{ e.exam_name }}?')">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="fas fa-history fs-1 mb-2 d-block opacity-25"></i>No exams in history. Generate seating layouts to save them.
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
