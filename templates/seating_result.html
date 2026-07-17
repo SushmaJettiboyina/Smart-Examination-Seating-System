@@ -64,6 +64,9 @@
         </div>
         <div class="topbar-right">
             {% if pdf_files %}
+            <a href="{{ url_for('download_faculty_register') }}" class="btn btn-sm btn-outline-primary me-2">
+                <i class="fas fa-file-pdf me-1"></i>Download Faculty Duty Register
+            </a>
             <a href="{{ url_for('download_all_pdfs') }}" class="btn btn-sm btn-accent me-2">
                 <i class="fas fa-download me-1"></i>Download All PDFs
             </a>

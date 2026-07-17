@@ -30,7 +30,7 @@ from excel_loader import (
 )
 from seating_algorithm import (generate_multiple_hall_distribution, get_seating_stats,
                                 validate_hall_layouts)
-from pdf_generator import generate_all_pdfs
+from pdf_generator import generate_all_pdfs, generate_faculty_duty_register_pdf
 from roll_range_helper import generate_roll_range
 from roll_parser import parse_manual_rolls, generate_start_end, remove_missing_rolls
 
@@ -1109,6 +1109,77 @@ def download_all_pdfs():
     return send_file(buf, as_attachment=True,
                      download_name=f'{exam_name}_All_Seating_Plans.zip',
                      mimetype='application/zip')
+
+
+@app.route('/download-faculty-register')
+@login_required
+def download_faculty_register():
+    halls = load_session_data('halls')
+    exam_info = load_session_data('exam_info')
+    if not halls or not exam_info:
+        flash('No generated seating layout found.', 'warning')
+        return redirect(url_for('seating_result'))
+
+    from datetime import datetime, timedelta
+
+    def format_time_12hr(time_str):
+        try:
+            t = datetime.strptime(time_str, "%H:%M")
+            formatted = t.strftime("%I:%M %p")
+            if formatted.startswith("0"):
+                return formatted[1:]
+            return formatted
+        except Exception:
+            return time_str
+
+    conn = db.get_db_connection()
+    faculty_rows = conn.execute('SELECT name, department FROM faculty_master').fetchall()
+    conn.close()
+
+    faculty_dept_map = {r['name'].strip().lower(): r['department'] for r in faculty_rows}
+
+    records = []
+    for h in halls:
+        invigilator = h.get('invigilator', '').strip()
+        if not invigilator:
+            continue
+        
+        dept = faculty_dept_map.get(invigilator.lower(), 'N/A')
+        
+        start_time = exam_info.get('exam_start_time', '10:00')
+        try:
+            t = datetime.strptime(start_time, "%H:%M")
+            reporting_t = (t - timedelta(minutes=30)).strftime("%I:%M %p")
+            if reporting_t.startswith("0"):
+                reporting_t = reporting_t[1:]
+        except Exception:
+            reporting_t = "30 mins before"
+
+        time_str = f"{format_time_12hr(start_time)} - {format_time_12hr(exam_info.get('exam_end_time', '13:00'))}"
+
+        records.append({
+            'name': invigilator,
+            'department': dept,
+            'hall': h.get('hall_name', f"Hall {h.get('hall_number')}"),
+            'exam': exam_info.get('exam_name', 'Exam'),
+            'date': exam_info.get('exam_date', ''),
+            'time': time_str,
+            'reporting_time': reporting_t
+        })
+
+    records.sort(key=lambda x: x['hall'])
+
+    pdf_filename = "Faculty_Invigilation_Duty_Register.pdf"
+    pdf_path = os.path.join(app.config['PDF_FOLDER'], pdf_filename)
+
+    try:
+        generate_faculty_duty_register_pdf(records, exam_info, pdf_path)
+        log_activity('download_pdf', "Downloaded Faculty Duty Register PDF.")
+        return send_file(pdf_path, as_attachment=True, download_name=pdf_filename, mimetype='application/pdf')
+    except Exception as e:
+        app.logger.error(f'Faculty register PDF generation failed: {e}')
+        flash(f'Error generating Faculty Register PDF: {str(e)}', 'danger')
+        return redirect(url_for('seating_result'))
 
 
 # ---------------------------------------------------------------------------

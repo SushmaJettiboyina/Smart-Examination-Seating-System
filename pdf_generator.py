@@ -86,95 +86,88 @@ def _add_page_number(canvas_obj, doc):
 
 def generate_hall_pdf(hall_data, exam_info, output_path):
     """
-    Generate a single hall seating PDF (v5).
-    Header: College Name, Paper Name (Exam Name), Hall Name, Date, Start Time, End Time.
+    Generate a single hall seating PDF (v9).
+    Header: Clean top title and metadata, followed by hall info, and seating grid. No footers or page numbers.
     """
     doc = SimpleDocTemplate(
         output_path, pagesize=A4,
         rightMargin=1.5*cm, leftMargin=1.5*cm,
-        topMargin=1.5*cm, bottomMargin=2*cm)
+        topMargin=1.5*cm, bottomMargin=1.5*cm)
 
     styles = _build_styles()
     story  = []
 
+    # 1. Main Title Header (Only Once)
+    title_style = ParagraphStyle(
+        'ArrangementTitle', fontSize=18, fontName='Helvetica-Bold',
+        textColor=PRIMARY_COLOR, alignment=TA_CENTER, spaceAfter=8)
+    story.append(Paragraph("Examination Seating Arrangement", title_style))
+    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY_COLOR, spaceAfter=12))
 
-    # ---- Header ----
+    # 2. Common metadata fields (Only Once)
+    start_time = exam_info.get('exam_start_time', '')
+    end_time = exam_info.get('exam_end_time', '')
+    
+    def format_time_12hr(time_str):
+        try:
+            from datetime import datetime
+            t = datetime.strptime(time_str, "%H:%M")
+            formatted = t.strftime("%I:%M %p")
+            if formatted.startswith("0"):
+                return formatted[1:]
+            return formatted
+        except Exception:
+            return time_str
+            
+    time_range_str = f"{format_time_12hr(start_time)} – {format_time_12hr(end_time)}" if start_time and end_time else f"{start_time} – {end_time}"
+    
+    meta_style_left = ParagraphStyle(
+        'ArrangementMetaLeft', fontSize=10, fontName='Helvetica',
+        textColor=PRIMARY_COLOR, alignment=TA_LEFT, leading=14)
 
-    hall_num  = hall_data['hall_number']
-    hall_name = hall_data.get('hall_name', f'Hall {hall_num}')
-    invigilator = hall_data.get('invigilator', '').strip()
-
-    # ── v8 Enhanced Header Block ──
-    exam_name       = exam_info.get('exam_name', 'Examination') or 'Examination'
-    exam_date       = exam_info.get('exam_date', '')
-    exam_start_time = exam_info.get('exam_start_time', '')
-    exam_end_time   = exam_info.get('exam_end_time', '')
-
-    # Header table: [Logo | College + Exam details]
-    header_left_items = [
-    Paragraph(
-        "Examination Seating Arrangement",
-        styles['college']
-    ),
-    Spacer(1, 0.15*cm),
-
-    Paragraph(
-        f"<b>Exam / Paper:</b> {exam_name}",
-        styles['exam']
-    ),
-
-    Spacer(1, 0.1*cm),
-
-    Paragraph(
-        f"<b>Hall:</b> {hall_name}",
-        styles['info']
-    ),
-]
-    if invigilator:
-        header_left_items.append(Paragraph(f"<b>Invigilator:</b> {invigilator}", styles['info']))
-    if exam_date or exam_start_time:
-        parts = []
-        if exam_date:       parts.append(f"Date: <b>{exam_date}</b>")
-        if exam_start_time: parts.append(f"Start: <b>{exam_start_time}</b>")
-        if exam_end_time:   parts.append(f"End: <b>{exam_end_time}</b>")
-        header_left_items.append(Paragraph("  |  ".join(parts), styles['info']))
-    for item in header_left_items:
-        story.append(item)
-
-    story.append(Spacer(1, 0.2*cm))
-    story.append(HRFlowable(width='100%', thickness=2, color=ACCENT_COLOR, spaceAfter=4))
-
-    # ── Coloured Hall Banner ──
-    hall_banner_text = f"HALL {hall_num}  –  {hall_name}  |  {exam_name}"
-    if invigilator:
-        hall_banner_text += f"  |  Invigilator: {invigilator}"
-    hall_banner = Table(
-        [[Paragraph(hall_banner_text, styles['hall'])]],
-        colWidths=['100%'])
-    hall_banner.setStyle(TableStyle([
-        ('BACKGROUND',    (0, 0), (-1, -1), PRIMARY_COLOR),
-        ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
-        ('TOPPADDING',    (0, 0), (-1, -1), 9),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
-        ('ROUNDEDCORNERS', [4]),
+    meta_text = [
+        [Paragraph("<b>Exam / Paper</b>", meta_style_left), Paragraph(f": {exam_info.get('exam_name', 'N/A')}", meta_style_left)],
+        [Paragraph("<b>Exam Date</b>", meta_style_left), Paragraph(f": {exam_info.get('exam_date', 'N/A')}", meta_style_left)],
+        [Paragraph("<b>Exam Time</b>", meta_style_left), Paragraph(f": {time_range_str}", meta_style_left)],
+    ]
+    meta_table = Table(meta_text, colWidths=[3.2*cm, 14.8*cm])
+    meta_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
     ]))
-    story.append(hall_banner)
-    story.append(Spacer(1, 0.35*cm))
+    story.append(meta_table)
+    story.append(Spacer(1, 0.6*cm))
 
-    total_students = hall_data['total_students']
-    total_benches  = len(hall_data['benches'])
-    stats_text = (f"Total Students: {total_students}  |  "
-                  f"Total Rows: {total_benches}")
-    story.append(Paragraph(stats_text, styles['info']))
+    # 3. Clean Hall and Invigilator Heading
+    story.append(HRFlowable(width='100%', thickness=1.5, color=ACCENT_COLOR, spaceAfter=8))
+    
+    hall_heading_style = ParagraphStyle(
+        'HallHeadingText', fontSize=13, fontName='Helvetica-Bold',
+        textColor=PRIMARY_COLOR, alignment=TA_LEFT, spaceAfter=4)
+    
+    hall_info_style = ParagraphStyle(
+        'HallInfoText', fontSize=10, fontName='Helvetica',
+        textColor=PRIMARY_COLOR, alignment=TA_LEFT, leading=14)
+
+    hall_num = hall_data['hall_number']
+    hall_name = hall_data.get('hall_name', f'Hall {hall_num}')
+    invigilator = hall_data.get('invigilator', '').strip() or 'Not Assigned'
+    total_students = hall_data.get('total_students', 0)
+
+    story.append(Paragraph(f"Hall {hall_num} ({hall_name})", hall_heading_style))
+    story.append(Paragraph(f"<b>Invigilator:</b> {invigilator}", hall_info_style))
+    story.append(Paragraph(f"<b>Total Students:</b> {total_students}", hall_info_style))
     story.append(Spacer(1, 0.4*cm))
 
-    # ---- Seating Table ----
+    # 4. Seating Table
     benches         = hall_data['benches']
     seats_per_bench = (hall_data.get('cols') or
                        (max(len(b) for b in benches) if benches else None) or
                        exam_info.get('seats_per_bench', 3))
 
-    # Header row
     header = ['Row'] + [f'Seat {i+1}' for i in range(seats_per_bench)]
     table_data = [header]
 
@@ -198,17 +191,13 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
                     styles['cell'])
                 row.append(cell_content)
 
-        # Pad short rows
         while len(row) < seats_per_bench + 1:
             row.append('—')
         table_data.append(row)
 
-    # Column widths
     available_width = A4[0] - 3*cm
     row_col_width = 1.0*cm
-
     seat_col_width = (available_width - row_col_width) / seats_per_bench
-
     col_widths = [row_col_width] + [seat_col_width] * seats_per_bench
 
     seating_table = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -219,14 +208,14 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
         ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE',      (0, 0), (-1, 0), 9),
         ('ALIGN',         (0, 0), (-1, 0), 'CENTER'),
-        ('TOPPADDING',    (0, 0), (-1, 0), 7),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 7),
+        ('TOPPADDING',    (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
         ('FONTNAME',      (0, 1), (-1, -1), 'Helvetica'),
         ('FONTSIZE',      (0, 1), (-1, -1), 8),
         ('ALIGN',         (0, 1), (-1, -1), 'CENTER'),
         ('VALIGN',        (0, 1), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING',    (0, 1), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+        ('TOPPADDING',    (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
         ('BACKGROUND',    (0, 1), (0, -1), LIGHT_GRAY),
         ('FONTNAME',      (0, 1), (0, -1), 'Helvetica-Bold'),
         ('GRID',          (0, 0), (-1, -1), 0.5, LIGHT_GRAY),
@@ -239,19 +228,9 @@ def generate_hall_pdf(hall_data, exam_info, output_path):
 
     seating_table.setStyle(table_style)
     story.append(seating_table)
-    story.append(Spacer(1, 0.5*cm))
 
-
-    # ---- Footer ----
-    footer_text = (
-    f"Paper: {exam_info.get('exam_name', '')}  |  "
-    "Confidential - For Invigilator Use Only"
-)
-    story.append(HRFlowable(width='100%', thickness=1, color=LIGHT_GRAY))
-    story.append(Spacer(1, 0.2*cm))
-    story.append(Paragraph(footer_text, styles['footer']))
-
-    doc.build(story, onFirstPage=_add_page_number, onLaterPages=_add_page_number)
+    # 5. Build doc (No footers, no page numbers)
+    doc.build(story)
     return output_path
 
 
@@ -270,3 +249,96 @@ def generate_all_pdfs(halls, exam_info, pdf_folder):
             'path':        out_path,
         })
     return generated_files
+
+
+def generate_faculty_duty_register_pdf(records, exam_info, output_path):
+    """
+    Generate a single PDF containing the duty details of ALL assigned faculty members (v9).
+    """
+    doc = SimpleDocTemplate(
+        output_path, pagesize=A4,
+        rightMargin=1.5*cm, leftMargin=1.5*cm,
+        topMargin=1.5*cm, bottomMargin=2*cm)
+
+    styles = _build_styles()
+    story  = []
+
+    # 1. Title
+    title_style = ParagraphStyle(
+        'DutyTitle', fontSize=18, fontName='Helvetica-Bold',
+        textColor=PRIMARY_COLOR, alignment=TA_CENTER, spaceAfter=8)
+    story.append(Paragraph("Faculty Invigilation Duty Register", title_style))
+    story.append(HRFlowable(width='100%', thickness=2, color=PRIMARY_COLOR, spaceAfter=15))
+
+    # 2. Metadata table
+    meta_style_left = ParagraphStyle(
+        'MetaLeft', fontSize=10, fontName='Helvetica',
+        textColor=PRIMARY_COLOR, alignment=TA_LEFT, leading=14)
+    
+    reporting_time = records[0]['reporting_time'] if records else "N/A"
+    exam_time = records[0]['time'] if records else "N/A"
+
+    meta_text = [
+        [Paragraph("<b>Exam/Paper</b>", meta_style_left), Paragraph(f": {exam_info.get('exam_name', 'N/A')}", meta_style_left)],
+        [Paragraph("<b>Exam Date</b>", meta_style_left), Paragraph(f": {exam_info.get('exam_date', 'N/A')}", meta_style_left)],
+        [Paragraph("<b>Exam Time</b>", meta_style_left), Paragraph(f": {exam_time}", meta_style_left)],
+        [Paragraph("<b>Reporting Time</b>", meta_style_left), Paragraph(f": {reporting_time}", meta_style_left)],
+        [Paragraph("<b>Total Faculty</b>", meta_style_left), Paragraph(f": {len(records)}", meta_style_left)]
+    ]
+    meta_table = Table(meta_text, colWidths=[3.2*cm, 14.8*cm])
+    meta_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 0.8*cm))
+
+    # 3. Duty Table
+    headers = ["Faculty Name", "Department", "Hall"]
+    
+    cell_style = ParagraphStyle(
+        'RegisterCellText', fontSize=9, fontName='Helvetica',
+        textColor=PRIMARY_COLOR, alignment=TA_CENTER, leading=11)
+        
+    cell_bold_style = ParagraphStyle(
+        'RegisterCellBoldText', fontSize=9, fontName='Helvetica-Bold',
+        textColor=PRIMARY_COLOR, alignment=TA_CENTER, leading=11)
+
+    table_data = []
+    header_row = [Paragraph(f"<b>{h}</b>", ParagraphStyle('HText', fontSize=9, fontName='Helvetica-Bold', textColor=WHITE, alignment=TA_CENTER)) for h in headers]
+    table_data.append(header_row)
+    
+    for r in records:
+        table_data.append([
+            Paragraph(f"<b>{r['name']}</b>", cell_bold_style),
+            Paragraph(r['department'], cell_style),
+            Paragraph(r['hall'], cell_bold_style)
+        ])
+        
+    col_widths = [8.0*cm, 5.0*cm, 5.0*cm]
+    
+    duty_table = Table(table_data, colWidths=col_widths, repeatRows=1)
+    
+    table_style = TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',    (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+        ('GRID',          (0, 0), (-1, -1), 0.5, LIGHT_GRAY),
+    ])
+    
+    for row_idx in range(1, len(table_data)):
+        if row_idx % 2 == 0:
+            table_style.add('BACKGROUND', (0, row_idx), (-1, row_idx), ALT_ROW_BG)
+            
+    duty_table.setStyle(table_style)
+    story.append(duty_table)
+
+    doc.build(story, onFirstPage=_add_page_number, onLaterPages=_add_page_number)
+    return output_path
